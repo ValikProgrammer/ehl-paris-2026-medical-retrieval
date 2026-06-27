@@ -3,17 +3,20 @@
   "checkpoint_id": "34ec40b770b1",
   "strategy": "manual-commit",
   "branch": "research/template-normalization",
-  "checkpoints_count": 17,
+  "checkpoints_count": 21,
   "files_touched": [
     ".gitignore",
     "ONBOARD.md",
+    "STATUS.md",
     "SUM.md",
+    "architecture.tex",
     "assignment_rerank.py",
     "brainiac_adapter_train.py",
     "brainiac_cosine_retrieval.py",
     "brainiac_patch_retrieval.py",
     "canonical_pca_retrieval.py",
     "contrastive_3d_train.py",
+    "d2_template_retrieval.py",
     "diagnostic_submissions.py",
     "jupyter_exec.py",
     "lesion_retrieval.py",
@@ -44,13 +47,19 @@
       "transcript": "/34/ec40b770b1/3/full.jsonl",
       "content_hash": "/34/ec40b770b1/3/content_hash.txt",
       "prompt": "/34/ec40b770b1/3/prompt.txt"
+    },
+    {
+      "metadata": "/34/ec40b770b1/4/metadata.json",
+      "transcript": "/34/ec40b770b1/4/full.jsonl",
+      "content_hash": "/34/ec40b770b1/4/content_hash.txt",
+      "prompt": "/34/ec40b770b1/4/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1476731,
-    "cache_creation_tokens": 0,
-    "cache_read_tokens": 33476096,
-    "output_tokens": 143122,
-    "api_call_count": 320
+    "input_tokens": 1492709,
+    "cache_creation_tokens": 395058,
+    "cache_read_tokens": 52493529,
+    "output_tokens": 259843,
+    "api_call_count": 468
   }
 }
