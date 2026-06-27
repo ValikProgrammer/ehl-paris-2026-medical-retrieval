@@ -1,0 +1,19 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "e718e883bf36",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".gitignore",
+    "config.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e7/18e883bf36/0/metadata.json",
+      "transcript": "/e7/18e883bf36/0/full.jsonl",
+      "content_hash": "/e7/18e883bf36/0/content_hash.txt",
+      "prompt": "/e7/18e883bf36/0/prompt.txt"
+    }
+  ]
+}
