@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "759b27e044dd",
+  "strategy": "manual-commit",
+  "branch": "research/template-normalization",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "STATUS.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/75/9b27e044dd/0/metadata.json",
+      "transcript": "/75/9b27e044dd/0/full.jsonl",
+      "content_hash": "/75/9b27e044dd/0/content_hash.txt",
+      "prompt": "/75/9b27e044dd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10316,
+    "cache_creation_tokens": 510187,
+    "cache_read_tokens": 37913049,
+    "output_tokens": 91461,
+    "api_call_count": 148
+  }
+}

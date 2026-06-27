@@ -1,0 +1,123 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "759b27e044dd",
+  "session_id": "5a9675fe-95d5-4c65-8637-ec78333b7cae",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-27T21:04:42.734379Z",
+  "branch": "research/template-normalization",
+  "checkpoints_count": 9,
+  "save_step_count": 9,
+  "files_touched": [
+    "STATUS.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8[1m]",
+  "turn_id": "ae9080558520",
+  "checkpoint_transcript_start": 742,
+  "transcript_lines_at_start": 742,
+  "token_usage": {
+    "input_tokens": 10316,
+    "cache_creation_tokens": 510187,
+    "cache_read_tokens": 37913049,
+    "output_tokens": 91461,
+    "api_call_count": 148
+  },
+  "session_metrics": {
+    "turn_count": 13
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-27T21:04:42.707217Z",
+    "agent_lines": 47,
+    "agent_removed": 0,
+    "human_added": 37,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 84,
+    "total_lines_changed": 84,
+    "agent_percentage": 55.952380952380956,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 63,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 140,
+      "agent_lines_removed": 6
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 173,
+      "agent_lines_removed": 6
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 136,
+      "user_lines_removed": 0,
+      "agent_lines_added": 173,
+      "agent_lines_removed": 6,
+      "user_added_per_file": {
+        "STATUS.md": 20,
+        "alpha_mix.py": 46,
+        "d2_methods.py": 70
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 46,
+      "user_lines_removed": 0,
+      "agent_lines_added": 293,
+      "agent_lines_removed": 6,
+      "user_added_per_file": {
+        "alpha_mix.py": 46
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 46,
+      "user_lines_removed": 0,
+      "agent_lines_added": 302,
+      "agent_lines_removed": 8,
+      "user_added_per_file": {
+        "alpha_mix.py": 46
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 46,
+      "user_lines_removed": 0,
+      "agent_lines_added": 316,
+      "agent_lines_removed": 8,
+      "user_added_per_file": {
+        "alpha_mix.py": 46
+      }
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 63,
+      "user_lines_removed": 0,
+      "agent_lines_added": 316,
+      "agent_lines_removed": 8,
+      "user_added_per_file": {
+        "STATUS.md": 17,
+        "alpha_mix.py": 46
+      }
+    }
+  ]
+}
