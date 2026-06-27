@@ -1,0 +1,137 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "fadbd5d38eb4",
+  "session_id": "019f092e-34ed-77a0-898d-8c84a636c403",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-27T16:08:23.802714Z",
+  "branch": "main",
+  "checkpoints_count": 5,
+  "save_step_count": 5,
+  "files_touched": [
+    ".gitignore",
+    "README.md",
+    "SUBMISSION_PLAN.md",
+    "SUM.md",
+    "classical_retrieval.py",
+    "submissions/all_fusion_default_plus_pca_c128_a100.csv",
+    "submissions/all_pca_ridge_c128_a100.csv",
+    "submissions/d2_fusion_dataset2.csv",
+    "submissions/d2_fusion_grid.csv",
+    "submissions/d2_mask_crop32.csv",
+    "submissions/d2_pca_abs_mask24.csv",
+    "submissions/d3_fusion_dataset3.csv",
+    "submissions/d3_fusion_shape.csv",
+    "submissions/d3_pca_ridge_c128_a100.csv",
+    "submissions/ds23_fusion_default_plus_pca_c128_a100.csv",
+    "submissions/ds23_fusion_grid.csv",
+    "submissions/ds23_fusion_robust_shape.csv",
+    "submissions/ds23_pca_ridge_c128_a100.csv",
+    "submissions/mix_d1pca_d2dataset2_d3dataset3.csv",
+    "submissions/mix_d1pca_d2grid_d3dataset3.csv",
+    "submissions/mix_d1pca_d2mask_d3shape.csv",
+    "submissions/mix_d1pca_d2pcaabsmask_d3dataset3.csv"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.4",
+  "turn_id": "81a451579828",
+  "token_usage": {
+    "input_tokens": 726414,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 16530304,
+    "output_tokens": 65661,
+    "api_call_count": 150
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-27T16:08:23.781039Z",
+    "agent_lines": 4140,
+    "agent_removed": 0,
+    "human_added": 2332,
+    "human_modified": 8,
+    "human_removed": 0,
+    "total_committed": 6478,
+    "total_lines_changed": 6480,
+    "agent_percentage": 63.888888888888886,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1198,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".classical_cache/cv_results.csv": 27,
+        ".idea/.gitignore": 10,
+        ".idea/misc.xml": 7,
+        ".idea/modules.xml": 8,
+        ".idea/paris.iml": 9,
+        ".idea/vcs.xml": 6,
+        ".ssh_known_hosts": 1,
+        "classical_retrieval.py": 654,
+        "submissions/ds23_fusion_shape.csv": 238,
+        "submissions/ds23_mask_crop32.csv": 238
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3009,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3009,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 501,
+      "user_lines_removed": 2,
+      "agent_lines_added": 6389,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        "brainiac_cosine_retrieval.py": 355,
+        "classical_retrieval.py": 146
+      },
+      "user_removed_per_file": {
+        "classical_retrieval.py": 2
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 501,
+      "user_lines_removed": 2,
+      "agent_lines_added": 6389,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        "brainiac_cosine_retrieval.py": 355,
+        "classical_retrieval.py": 146
+      },
+      "user_removed_per_file": {
+        "classical_retrieval.py": 2
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 1105,
+      "user_lines_removed": 2,
+      "agent_lines_added": 6551,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        "brainiac_adapter_train.py": 604,
+        "brainiac_cosine_retrieval.py": 355,
+        "classical_retrieval.py": 146
+      },
+      "user_removed_per_file": {
+        "classical_retrieval.py": 2
+      }
+    }
+  ]
+}

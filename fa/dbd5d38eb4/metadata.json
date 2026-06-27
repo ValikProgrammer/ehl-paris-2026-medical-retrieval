@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "fadbd5d38eb4",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".gitignore",
+    "README.md",
+    "SUBMISSION_PLAN.md",
+    "SUM.md",
+    "classical_retrieval.py",
+    "submissions/all_fusion_default_plus_pca_c128_a100.csv",
+    "submissions/all_pca_ridge_c128_a100.csv",
+    "submissions/d2_fusion_dataset2.csv",
+    "submissions/d2_fusion_grid.csv",
+    "submissions/d2_mask_crop32.csv",
+    "submissions/d2_pca_abs_mask24.csv",
+    "submissions/d3_fusion_dataset3.csv",
+    "submissions/d3_fusion_shape.csv",
+    "submissions/d3_pca_ridge_c128_a100.csv",
+    "submissions/ds23_fusion_default_plus_pca_c128_a100.csv",
+    "submissions/ds23_fusion_grid.csv",
+    "submissions/ds23_fusion_robust_shape.csv",
+    "submissions/ds23_pca_ridge_c128_a100.csv",
+    "submissions/mix_d1pca_d2dataset2_d3dataset3.csv",
+    "submissions/mix_d1pca_d2grid_d3dataset3.csv",
+    "submissions/mix_d1pca_d2mask_d3shape.csv",
+    "submissions/mix_d1pca_d2pcaabsmask_d3dataset3.csv"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fa/dbd5d38eb4/0/metadata.json",
+      "transcript": "/fa/dbd5d38eb4/0/full.jsonl",
+      "content_hash": "/fa/dbd5d38eb4/0/content_hash.txt",
+      "prompt": "/fa/dbd5d38eb4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 726414,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 16530304,
+    "output_tokens": 65661,
+    "api_call_count": 150
+  }
+}

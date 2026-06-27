@@ -1,0 +1,42 @@
+Continue
+
+---
+
+The new update - the most important is 2 and 3 parts of the dataset, the first one should be used to run on second and third(use thain part)
+
+---
+
+1. Different colors(contrasts, same moment) 2. Some non linear transformations 3. After surgery
+
+---
+
+We now has gpu. Access: ip:
+134.199.198.104
+
+jupyter_url:
+http://134.199.198.104/lab?REDACTED
+
+jupyter_token:
+REDACTED
+root_password:
+Drake2550  this is MI300X GPU, with a whopping 192GB of vRAM
+
+---
+
+Continue
+
+---
+
+How did u do this? Explain in easy words, in russian, and send me the commands I need to run to validate, for pca_ridge_c128_a100
+
+---
+
+We've gote 0.55714 on kaggle how can we make it better?
+
+---
+
+Напиши саммаи того что ты сделал, с самого начала
+
+---
+
+Сохрани в SUM.md
