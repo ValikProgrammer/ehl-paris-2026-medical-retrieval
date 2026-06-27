@@ -1,1 +1,8 @@
 ehl-paris-medical-image-retrieval
+.classical_cache/
+.uv-cache/
+.uv-python/
+.venv/
+__pycache__/
+.ssh_known_hosts
+artifacts/

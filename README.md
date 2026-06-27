@@ -6,6 +6,32 @@ Your task is to build a cross-modal medical image retrieval system. For each que
 
 https://www.kaggle.com/t/b33ec3e76c3d4e16a6b56852470b3ebf
 
+## Local Environment
+
+For the classical retrieval pipeline, this repo can be bootstrapped fully offline
+from the cached `uv` packages already stored in the repository:
+
+```bash
+./setup_local_env_offline.sh
+source .venv/bin/activate
+python -c "import numpy, scipy, sklearn, nibabel; print('env ok')"
+```
+
+This offline environment is enough for:
+
+- `classical_retrieval.py`
+- cached vector analysis
+- submission validation
+
+It is not enough for BrainIAC training or embedding extraction, because the local
+cache does not currently include `torch` or `monai`. For a full BrainIAC-capable
+environment with internet access, install those online into the same `.venv`:
+
+```bash
+source .venv/bin/activate
+pip install torch monai==1.3.2 nibabel numpy scipy scikit-learn
+```
+
 
 ## Modalities
 
@@ -239,6 +265,43 @@ This writes a combined submission file:
 `slice_clip_submission.csv`
 
 The file can be submitted directly to Kaggle.
+
+## Classical Cosine Embeddings
+
+For a stronger non-neural baseline, `classical_retrieval.py` can:
+
+* extract hand-crafted 3D MRI features into cached vectors
+* build final query/gallery embeddings
+* rank gallery targets with cosine similarity
+* write a ready-to-submit Kaggle CSV
+
+Run from the repo root:
+
+```sh
+uv run classical_retrieval.py embed-submit \
+  --data-root ehl-paris-medical-image-retrieval \
+  --vectors-dir artifacts/vectors/fusion_default_plus_pca \
+  --out submissions/cosine_vectors_fusion_default_plus_pca.csv
+```
+
+This writes one `.npz` file with `query_ids`, `target_ids`, `query_vectors`, and
+`target_vectors` for each dataset/split pool, plus a combined submission CSV.
+
+## BrainIAC Cosine Embeddings
+
+To generate foundation-model embeddings with the pretrained BrainIAC backbone
+and rank gallery targets by cosine similarity:
+
+```sh
+uv run brainiac_cosine_retrieval.py \
+  --data-root ehl-paris-medical-image-retrieval \
+  --checkpoint /path/to/BrainIAC.ckpt \
+  --vectors-dir artifacts/vectors/brainiac_cosine \
+  --out submissions/brainiac_cosine_submission.csv
+```
+
+This writes one `.npz` file per dataset/split pool with `query_vectors` and
+`target_vectors`, plus a combined Kaggle submission CSV.
 
 You can also submit only one dataset to get intuition for the difficulty of each retrieval pool.
 For example, to train on dataset1 and submit only dataset1 validation and test rows:
