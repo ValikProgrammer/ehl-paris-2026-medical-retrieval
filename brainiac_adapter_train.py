@@ -17,6 +17,7 @@ import json
 import math
 import os
 import random
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -34,6 +35,7 @@ DEFAULT_CHECKPOINT = Path("checkpoints/BrainIAC.ckpt")
 DEFAULT_RUNS_ROOT = Path("runs")
 IMAGE_SIZE = (96, 96, 96)
 SEED = 20260627
+PAIR_AUG_SUFFIX_RE = re.compile(r"_aug\d+$")
 
 
 @dataclass(frozen=True)
@@ -119,6 +121,15 @@ def pair_key(row: dict[str, str]) -> str:
     return row.get("pair_id") or f"{row['query_id']}|{row['target_id']}"
 
 
+def canonical_pair_key(row: dict[str, str]) -> str:
+    """Group generated augmentation rows with their source pair."""
+    key = pair_key(row)
+    key = PAIR_AUG_SUFFIX_RE.sub("", key)
+    if "|" in key:
+        return "|".join(PAIR_AUG_SUFFIX_RE.sub("", part) for part in key.split("|"))
+    return key
+
+
 def stable_split(
     pairs: list[dict[str, str]],
     holdout_frac: float,
@@ -133,6 +144,27 @@ def stable_split(
     holdout = [row for _, row in scored[:holdout_n]]
     train = [row for _, row in scored[holdout_n:]]
     return train, holdout
+
+
+def split_augmented_training_rows(
+    train_rows: list[dict[str, str]],
+    holdout_rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Keep augmented copies of holdout source pairs out of adapter training."""
+    holdout_keys = {canonical_pair_key(row) for row in holdout_rows}
+    return [row for row in train_rows if canonical_pair_key(row) not in holdout_keys]
+
+
+def unique_manifest_rows(rows: list[dict[str, str]], id_key: str) -> list[dict[str, str]]:
+    seen: set[str] = set()
+    unique_rows: list[dict[str, str]] = []
+    for row in rows:
+        image_id = row[id_key]
+        if image_id in seen:
+            continue
+        seen.add(image_id)
+        unique_rows.append(row)
+    return unique_rows
 
 
 def normalize_nonzero(volume: np.ndarray) -> np.ndarray:
@@ -442,6 +474,8 @@ def train_adapter(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
+    parser.add_argument("--train-pair-csv", type=Path, default=None, help="Training pair CSV. Can be an augmented CSV.")
+    parser.add_argument("--holdout-pair-csv", type=Path, default=None, help="Original labelled pairs used for leakage-free holdout.")
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--run-dir", type=Path, default=DEFAULT_RUNS_ROOT / "brainiac_adapter")
     parser.add_argument("--holdout-frac", type=float, default=0.20)
@@ -471,12 +505,22 @@ def main() -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     device = get_device(args.device)
 
-    train_pairs = read_csv(data_root / "dataset1" / "train_pairs.csv")
-    train_split, holdout_split = stable_split(train_pairs, args.holdout_frac, args.split_seed)
+    train_pair_csv = args.train_pair_csv or data_root / "dataset1" / "train_pairs.csv"
+    holdout_pair_csv = args.holdout_pair_csv or data_root / "dataset1" / "train_pairs.csv"
+    train_pairs = read_csv(train_pair_csv)
+    holdout_source_pairs = read_csv(holdout_pair_csv)
+    source_train_split, holdout_split = stable_split(holdout_source_pairs, args.holdout_frac, args.split_seed)
+    train_split = split_augmented_training_rows(train_pairs, holdout_split)
+    if not train_split:
+        raise ValueError("No training rows remain after excluding holdout source pairs")
     split_payload = {
         "seed": args.seed,
         "split_seed": args.split_seed,
         "holdout_frac": args.holdout_frac,
+        "train_pair_csv": train_pair_csv,
+        "holdout_pair_csv": holdout_pair_csv,
+        "source_train_pairs": len(source_train_split),
+        "source_holdout_pairs": len(holdout_split),
         "train_pairs": len(train_split),
         "holdout_pairs": len(holdout_split),
         "train_pair_ids": [pair_key(row) for row in train_split],
@@ -486,8 +530,15 @@ def main() -> None:
 
     backbone = ViTBackboneNet(checkpoint).to(device)
 
-    all_train_queries = [{"query_id": row["query_id"], "query_image": row["query_image"]} for row in train_pairs]
-    all_train_targets = [{"target_id": row["target_id"], "target_image": row["target_image"]} for row in train_pairs]
+    rows_to_embed = train_split + holdout_split + holdout_source_pairs
+    all_train_queries = unique_manifest_rows(
+        [{"query_id": row["query_id"], "query_image": row["query_image"]} for row in rows_to_embed],
+        "query_id",
+    )
+    all_train_targets = unique_manifest_rows(
+        [{"target_id": row["target_id"], "target_image": row["target_image"]} for row in rows_to_embed],
+        "target_id",
+    )
     train_query_ids, train_query_vectors = embed_manifest(backbone, all_train_queries, data_root, "query_id", "query_image", args.embed_batch_size, args.num_workers, device)
     train_target_ids, train_target_vectors = embed_manifest(backbone, all_train_targets, data_root, "target_id", "target_image", args.embed_batch_size, args.num_workers, device)
     query_map = {image_id: vector for image_id, vector in zip(train_query_ids, train_query_vectors)}
@@ -500,7 +551,8 @@ def main() -> None:
     holdout_query_matrix = np.stack([query_map[query_id] for query_id in holdout_query_ids]).astype(np.float32)
     holdout_target_matrix = np.stack([target_map[target_id] for target_id in holdout_target_ids]).astype(np.float32)
     holdout_truth = {row["query_id"]: row["target_id"] for row in holdout_split}
-    all_gallery_target_ids = list(train_target_ids)
+    original_target_ids = [row["target_id"] for row in holdout_source_pairs]
+    all_gallery_target_ids = [target_id for target_id in original_target_ids if target_id in target_map]
     all_gallery_target_matrix = np.stack([target_map[target_id] for target_id in all_gallery_target_ids]).astype(np.float32)
 
     raw_holdout_metrics = evaluate_pair_metrics(
