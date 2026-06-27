@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c17113e25bd7",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "NEXT_AGENT.md",
+    "generate_augmented_train_data.py",
+    "server_run_slice_clip_aug.sh",
+    "slice_clip_baseline.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c1/7113e25bd7/0/metadata.json",
+      "transcript": "/c1/7113e25bd7/0/full.jsonl",
+      "content_hash": "/c1/7113e25bd7/0/content_hash.txt",
+      "prompt": "/c1/7113e25bd7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 167708,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2589056,
+    "output_tokens": 33361,
+    "api_call_count": 46
+  }
+}

@@ -1,0 +1,87 @@
+так смотри прочитай две pdf в этоv репо - hack_brief и presentation ... и давай сделаем аугментацию которую предлагается в pdf и дальше ты мне скажешь как чего тернировать и тесирровать
+
+---
+
+так и какие преобразования будем делать и в каком обьеме?
+
+---
+
+а зачем контраст и вся фигне вот эта - давай просто преобразования именно геометрические - или контарст тоже роляет
+
+---
+
+окей - да двай сделаем и с контрастом - но постарайся это разделеить на две разные посылки и т.д. и давай делать эти аугментации - делай преобразования и скажи потом как мне на сервере тренировать
+
+---
+
+так а у нас такая штука есть - docker exec -it rocm bash -lc '
+  cd /app &&
+  python3 /app/brainiac_adapter_train.py \
+    --data-root /app/ehl-paris-medical-image-retrieval \
+    --checkpoint /app/BrainIAC.ckpt \
+    --run-dir /app/runs/brainiac_adapter \
+    --device cuda \
+    --embed-batch-size 8 \
+    --batch-size 64 \
+    --epochs 
+  '
+
+докер контейнер на сервере для обучения на gpu. дай мне все необходимое что мне нужно запустить на сервере
+
+---
+
+так вот инфа о нашем сервере. > Mikhail Fadin:
+ip:
+134.199.198.104
+
+jupyter_url:
+http://134.199.198.104/lab?REDACTED
+
+jupyter_token:
+REDACTED
+root_password:
+Drake2550
+
+> Mikhail Fadin:
+docker exec -it rocm bash -lc '
+  cd /app &&
+  python3 /app/brainiac_adapter_train.py \
+    --data-root /app/ehl-paris-medical-image-retrieval \
+    --checkpoint /app/BrainIAC.ckpt \
+    --run-dir /app/runs/brainiac_adapter \
+    --device cuda \
+    --embed-batch-size 8 \
+    --batch-size 64 \
+    --epochs 
+  '
+
+> Mikhail Fadin:
+~/ehl-paris-2026-medical-retrieval
+
+заходи запускай что нужно - только перед этим скажи что собираешься делать чтобы я апрувнул
+
+---
+
+эпох давай меньше - 200 примерно и построй график лоса чтобы я видел. Перед эти давай на 10 эпохай прогоним - проверим что все работает. И как мне потом на кагл сабмитить?
+
+---
+
+❯   docker cp slice_clip_baseline.py rocm:/app/slice_clip_baseline.py
+  docker cp server_run_slice_clip_aug.sh rocm:/app/server_run_slice_clip_aug.sh
+Successfully copied 26.7kB (transferred 28.7kB) to rocm:/app/slice_clip_baseline.py
+Error response from daemon: No such container: rocm
+Successfully copied 1.74kB (transferred 3.58kB) to rocm:/app/server_run_slice_clip_aug.sh
+Error response from daemon: No such container: rocm
+~/Desktop/Code/ehl-paris-2026-medical-retrieval (main) ❯
+
+---
+
+подключись и запусти про кагл за один раз не больше 3х посылок делай, но пока перед каглом проси моего апрува
+
+---
+
+так смотри - сделай просто больше данных - нагенерируй их а модельку обучать не надо
+
+---
+
+так остановись, сделай записаь того что нужно сделдать следующему агенту (просто буквально команды запустить) но дай ему еще контекста - запиши все в файле NEXT_AGENT.md и там обязательно оставь данные про сервер
