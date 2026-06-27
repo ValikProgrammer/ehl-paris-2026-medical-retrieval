@@ -1,0 +1,25 @@
+Настрой cutoff, что бы он в любом случае выходил если глобальный минимум лоса не обвлялся заданное кол-во эпох(по дефолту 15) - выходим из обучения(или по кол-ву эпох+сделать что бы данные по MRR и loss также сохранялись в json по результатам обучения, что бы можно было графики из этого строить
+
+---
+
+И путь до этого файла с обучением выводиться в консоль должен+путь до весов
+
+---
+
+docker cp /root/brainiac_adapter_train.py rocm:/app/brainiac_adapter_train.py
+  docker exec -it rocm bash -lc '
+  cd /app &&
+  python3 /app/brainiac_adapter_train.py \
+    --data-root /app/ehl-paris-medical-image-retrieval \
+    --checkpoint /app/BrainIAC.ckpt \
+    --run-dir /app/runs/brainiac_adapter \
+    --device cuda \
+    --embed-batch-size 8 \
+    --batch-size 64 \
+    --epochs 120 \
+    --early-stop-patience 15
+  '
+
+---
+
+Я обновил brainiac_adapter и brainiac_cosine, как залить все на сервер и протетсить

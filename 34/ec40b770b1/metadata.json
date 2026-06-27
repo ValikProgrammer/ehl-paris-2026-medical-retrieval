@@ -3,7 +3,7 @@
   "checkpoint_id": "34ec40b770b1",
   "strategy": "manual-commit",
   "branch": "research/template-normalization",
-  "checkpoints_count": 7,
+  "checkpoints_count": 9,
   "files_touched": [
     ".gitignore",
     "ONBOARD.md",
@@ -26,13 +26,19 @@
       "transcript": "/34/ec40b770b1/0/full.jsonl",
       "content_hash": "/34/ec40b770b1/0/content_hash.txt",
       "prompt": "/34/ec40b770b1/0/prompt.txt"
+    },
+    {
+      "metadata": "/34/ec40b770b1/1/metadata.json",
+      "transcript": "/34/ec40b770b1/1/full.jsonl",
+      "content_hash": "/34/ec40b770b1/1/content_hash.txt",
+      "prompt": "/34/ec40b770b1/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1102290,
+    "input_tokens": 1162683,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 29819776,
-    "output_tokens": 103922,
-    "api_call_count": 231
+    "cache_read_tokens": 30151680,
+    "output_tokens": 107551,
+    "api_call_count": 239
   }
 }
