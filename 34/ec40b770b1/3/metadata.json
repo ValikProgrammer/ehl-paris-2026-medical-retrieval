@@ -1,0 +1,138 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "34ec40b770b1",
+  "session_id": "019f0a1a-6e0b-7a93-8ad4-a1f4a6322c06",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-27T19:24:21.474989Z",
+  "branch": "research/template-normalization",
+  "checkpoints_count": 4,
+  "save_step_count": 4,
+  "files_touched": [
+    "brainiac_adapter_train.py",
+    "brainiac_cosine_retrieval.py",
+    "contrastive_3d_train.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "30cc90ac9c4f",
+  "token_usage": {
+    "input_tokens": 152216,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2402816,
+    "output_tokens": 23890,
+    "api_call_count": 45
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-27T19:24:21.460741Z",
+    "agent_lines": 652,
+    "agent_removed": 41,
+    "human_added": 2702,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 3359,
+    "total_lines_changed": 3401,
+    "agent_percentage": 20.37635989414878,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 14897,
+      "user_lines_removed": 5,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cache/fontconfig/CACHEDIR.TAG": 4,
+        ".idea/.gitignore": 10,
+        ".idea/misc.xml": 7,
+        ".idea/modules.xml": 8,
+        ".idea/paris.iml": 9,
+        ".idea/vcs.xml": 6,
+        ".mplconfig/fontlist-v3.11.0.json": 11124,
+        "brainiac_adapter_train.py": 50,
+        "diagnostic_submissions.py": 278,
+        "jupyter_exec.py": 93,
+        "lol.log": 120,
+        "plot_lol_log.py": 138,
+        "submission.csv": 378,
+        "submissions/d1_pca_ridge_c128_a100.csv": 141,
+        "submissions/d2_pca_ridge_c128_a100.csv": 141,
+        "submissions/diagnostics/dataset2_csv_circular.csv": 141,
+        "submissions/diagnostics/dataset2_csv_index.csv": 141,
+        "submissions/diagnostics/dataset2_csv_reverse.csv": 141,
+        "submissions/diagnostics/dataset2_file_size.csv": 141,
+        "submissions/diagnostics/dataset2_hash_distance.csv": 141,
+        "submissions/diagnostics/dataset2_id_hex_distance.csv": 141,
+        "submissions/diagnostics/dataset2_nifti_header.csv": 141,
+        "submissions/diagnostics/dataset2_sample_submission.csv": 141,
+        "submissions/diagnostics/dataset2_sorted_index.csv": 141,
+        "submissions/diagnostics/dataset2_sorted_reverse.csv": 141,
+        "submissions/diagnostics/dataset3_csv_circular.csv": 98,
+        "submissions/diagnostics/dataset3_csv_index.csv": 98,
+        "submissions/diagnostics/dataset3_csv_reverse.csv": 98,
+        "submissions/diagnostics/dataset3_file_size.csv": 98,
+        "submissions/diagnostics/dataset3_hash_distance.csv": 98,
+        "submissions/diagnostics/dataset3_id_hex_distance.csv": 98,
+        "submissions/diagnostics/dataset3_nifti_header.csv": 98,
+        "submissions/diagnostics/dataset3_sample_submission.csv": 98,
+        "submissions/diagnostics/dataset3_sorted_index.csv": 98,
+        "submissions/diagnostics/dataset3_sorted_reverse.csv": 98
+      },
+      "user_removed_per_file": {
+        "brainiac_adapter_train.py": 5
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 5,
+      "user_lines_removed": 0,
+      "agent_lines_added": 15581,
+      "agent_lines_removed": 5,
+      "user_added_per_file": {
+        "contrastive_3d_train.py": 5
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 762,
+      "user_lines_removed": 250,
+      "agent_lines_added": 15624,
+      "agent_lines_removed": 16,
+      "user_added_per_file": {
+        "assignment_rerank.py": 108,
+        "contrastive_3d_train.py": 5,
+        "lol.log": 32,
+        "submissions/all_pca_ridge_c128_a100_hungarian.csv": 378,
+        "submissions/d2_pca_ridge_c128_a100_hungarian.csv": 141,
+        "submissions/d3_pca_ridge_c128_a100_hungarian.csv": 98
+      },
+      "user_removed_per_file": {
+        "lol.log": 250
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 1457,
+      "user_lines_removed": 250,
+      "agent_lines_added": 15624,
+      "agent_lines_removed": 16,
+      "user_added_per_file": {
+        "assignment_rerank.py": 143,
+        "contrastive_3d_train.py": 5,
+        "lol.log": 32,
+        "submissions/all_pca_ridge_c128_a100_hungarian.csv": 378,
+        "submissions/d2_blend_pca075_grid025_hungarian.csv": 141,
+        "submissions/d2_fusion_grid_hungarian.csv": 141,
+        "submissions/d2_pca_ridge_c128_a100_hungarian.csv": 141,
+        "submissions/d3_pca_ridge_c128_a100_hungarian.csv": 98,
+        "submissions/mix_hung_d1pca_d2pca075grid025_d3pca.csv": 378
+      },
+      "user_removed_per_file": {
+        "lol.log": 250
+      }
+    }
+  ]
+}
