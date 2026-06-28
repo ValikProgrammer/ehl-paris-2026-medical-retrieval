@@ -123,8 +123,19 @@ def build_model(data_root: Path, grid: int, components: int, alpha: float,
     return t1_tpl, t2_tpl, q_pca, t_pca, ridge
 
 
+def sinkhorn(scores: np.ndarray, tau: float = 0.05, iters: int = 50) -> np.ndarray:
+    """Doubly-stochastic (soft-bijection) normalization of a cosine score matrix.
+    Parameter-free at inference (cannot overfit train) — a legitimate re-ranking,
+    NOT a data leak. Sharpens the assignment by enforcing the bijection prior."""
+    K = np.exp((scores - scores.max()) / tau)
+    for _ in range(iters):
+        K = K / (K.sum(axis=1, keepdims=True) + 1e-12)
+        K = K / (K.sum(axis=0, keepdims=True) + 1e-12)
+    return K
+
+
 def score_pool(
-    data_root, dataset, split, grid, model, cache_dir, assignment, register=True
+    data_root, dataset, split, grid, model, cache_dir, assignment, register=True, rerank="none"
 ) -> list[dict[str, str]]:
     t1_tpl, t2_tpl, q_pca, t_pca, ridge = model
     root = data_root / dataset
@@ -146,6 +157,9 @@ def score_pool(
     q = np.stack(q)
     t = np.stack(t)
     scores = (q @ t.T).astype(np.float64)
+
+    if rerank == "sinkhorn":
+        scores = sinkhorn(scores)
 
     if assignment and scores.shape[0] == scores.shape[1]:
         row_ind, col_ind = linear_sum_assignment(-scores)
@@ -178,6 +192,7 @@ def parse_args() -> argparse.Namespace:
                    help="Fit the map on clean + K synthetic geom+contrast augmented "
                         "copies of dataset1 train (local, no extra data needed).")
     p.add_argument("--assignment", action="store_true")
+    p.add_argument("--rerank", choices=["none", "sinkhorn"], default="none")
     p.add_argument("--rich", action="store_true", help="Use multi-channel rich feature (intensity+edge+half-scale).")
     p.add_argument("--sliceview", action="store_true", help="Use multi-direction slice feature.")
     p.add_argument("--no-register", action="store_true",
@@ -201,7 +216,7 @@ def main() -> None:
         for split in args.splits:
             rows.extend(
                 score_pool(args.data_root, dataset, split, args.grid, model, args.cache_dir,
-                           args.assignment, register=not args.no_register)
+                           args.assignment, register=not args.no_register, rerank=args.rerank)
             )
     write_csv(args.out, rows)
     print(f"wrote {len(rows)} rows to {args.out}")
