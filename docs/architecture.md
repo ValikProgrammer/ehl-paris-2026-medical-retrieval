@@ -2,7 +2,13 @@
 
 A fully **classical** (no deep learning, no augmentation) registration-based
 retrieval pipeline for the *EHL Paris: Medical Image Retrieval* competition.
-Best public score **0.91981**, up from a 0.651 baseline.
+
+- **Best leak-free public score: 0.80462** (d1+d2 template, **d3 = brain-bbox + MIND**).
+- **0.91981** (d2 deformable-Demons + slab) and **0.90444** (d2 template) both use the
+  **d3 raw-grid** path, which rides the dataset3 geometry shortcut (§5, §11). The
+  external **BraTS** identity-matching exploit was investigated and **removed** (§11).
+
+Up from a 0.651 baseline.
 
 ---
 
@@ -107,11 +113,24 @@ registration per volume), not O(N²). This single step:
 - d2 MRR ~0.39 → ~0.75
 - d1 MRR ~0.877 → ~0.964
 
-**When NOT to register (dataset3).** d3 targets are already resampled into query
-space — query & target already share geometry. Registering an intraop volume to a
-*preop* template only misaligns the surgical changes. Empirically template
-normalization **hurts** d3 (MRR 0.690 → 0.251). Instead skip registration and feed
-the raw grid feature → d3 MRR ≈ 1.0. (`--no-register`.)
+**dataset3 (aligned) — and its geometry leak.** d3 targets are resampled into the
+query's physical space, so query & target already share geometry. Registering an
+intraop volume to a *preop* template misaligns the surgical changes (template norm
+**hurts** d3: 0.690 → 0.251). The naive `--no-register` raw-grid feature gives d3
+MRR ≈ **1.0**, but that **rides the geometry leak** (§11): the unique per-subject
+affine/FOV is shared by a true pair and, when the native box is resized into the
+44³ cube, it is baked in as a fingerprint + voxel-wise alignment.
+
+The **honest d3 path** removes that shortcut:
+
+| d3 method | MRR | what it removes |
+|---|---|---|
+| raw-grid (`--no-register`) | **1.000** | nothing — full geometry leak |
+| brain-bbox grid (`--bbox-crop`) | 0.442 | FOV/box-size fingerprint |
+| **brain-bbox + MIND, grid 56** (`--bbox-crop --mind --grid 56`) | **0.700** | FOV; MIND adds modality-invariance on the aligned brain |
+| template-register | 0.251 | also the pair co-registration (fully leak-free) |
+
+We ship **bbox + MIND g56** (0.700) as the honest dataset3 method.
 
 ## 6. Deformable registration + slab fusion (the 0.91981 lever)
 
@@ -184,10 +203,15 @@ End-to-end per pool:
 | d1 **template** + d2 template + d3 pca | 0.80127 | template helps d1 too |
 | d1 template + d2 template + d3 **grid** | 0.90444 | goal hit |
 | d1 template + d2 **deformable** + d3 grid | 0.91874 | elastic reg transfers |
-| d1 template + d2 **deform + slab** + d3 grid | **0.91981** | **best** |
-| grid56 variants | 0.850 / 0.866 | regress (see §8) |
+| d1 template + d2 **deform + slab** + d3 grid | 0.91981 | d3 grid uses geometry leak |
+| **leak-free:** d1+d2 template + **d3 bbox+MIND g56** | **0.80462** | **best honest** |
+| leak-free, d3 bbox+MIND g44 | 0.78971 | |
+| leak-free, d3 bbox-grid, Hungarian on/off | 0.71836 / 0.65057 | Hungarian = +0.068 |
+| external BraTS matching (removed) | (~1.0 reported) | data leak, not in repo |
+| grid56 variants (d2) | 0.850 / 0.866 | regress (see §8) |
 
-Per-dataset MRR at best mix: `MRR1 ≈ 0.964`, `MRR2 ≈ 0.749+`, `MRR3 ≈ 1.0`.
+Per-dataset val MRR: `MRR1 ≈ 0.964`, `MRR2 ≈ 0.749` (the wall), `MRR3` = 1.0
+(geometry leak) / 0.700 (leak-free bbox+MIND) / 0.251 (fully registered).
 
 ## 11. Negative results
 
@@ -204,5 +228,24 @@ The harness + partial submissions ruled out:
 - **BrainIAC foundation-model embeddings** (cosine / adapter / patch): all below
   the classical pipeline.
 - **Sinkhorn / fusion / reranking** beyond Hungarian: no transfer to real data.
+
+## 12. Data-leak audit
+
+Several leaderboard teams scored a perfect 1.0. Findings:
+
+- **dataset2 — no accessible leak.** IDs are random hashes (no hash/sort/row-order
+  relation), file sizes constant, NIfTI headers byte-identical constants, affines a
+  single constant value, write-timestamps batched, no byte-duplicate files. d2's
+  ~0.749 is the honest ceiling (≈13 methods tried).
+- **dataset3 — real geometry leak.** True pairs share an exact affine/FOV (target
+  resampled into query space). Matching by affine equality is a pure metadata leak;
+  the raw-grid path rides it implicitly (§5). The honest fix is brain-bbox + MIND.
+- **External BraTS-GLI matching — the 1.0 exploit (removed).** d1/d2 are public
+  BraTS-GLI; intramodally registering each warped d2 image to the clean BraTS
+  library recovers subject identity → its known T2 → the pairing (~1.0, works on
+  private). The exploit code (`tmp/srv_*`, probe data) has been removed from the repo.
+- **Public-LB probing.** A single-query partial submission scores `1/(120·rank)`,
+  exposing each validation answer. Inflates public only (val = ~27%), not private.
+  Not used.
 
 See [`augmentation.md`](augmentation.md) for the augmentation experiments.

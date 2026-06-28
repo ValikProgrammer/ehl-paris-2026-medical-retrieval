@@ -1,138 +1,180 @@
-# EHL Paris — Cross-modal Brain MRI Retrieval
+# Cross-Modal Brain MRI Retrieval — EHL Paris
 
-Hackathon submission for the **EHL Paris: Medical Image Retrieval** Kaggle
-competition. Given a query **T1 post-contrast** brain MRI, rank a gallery of **T2**
-MRIs so the same subject ranks first, across three datasets of increasing
-geometric difficulty.
+Classical, registration-based retrieval for the *EHL Paris: Medical Image Retrieval*
+competition. For each query (3D **T1 post-contrast** MRI) rank the gallery of
+**T2** MRIs so the same-subject target ranks highest. No deep learning, no
+augmentation — pretrained-free, content-only.
 
-**Final public score: `0.91981`** (up from a 0.651 baseline). The pipeline is
-**fully classical** — no deep learning, no augmentation in the final model — built
-on intensity normalization, registration to learned templates, a PCA+Ridge
-cross-modal map, and Hungarian one-to-one assignment.
-
-> Full method writeup: [`docs/architecture.md`](docs/architecture.md).
-> Augmentation experiments (a negative result): [`docs/augmentation.md`](docs/augmentation.md).
+> **Headline (leak-free):** public **0.80462**
+> (`submissions/mix_leakfree_d1d2template_d3mind_g56.csv`).
+> With the dataset3 geometry shortcut counted as legitimate content it is **0.904**.
+> The external-data-leak route (BraTS matching) is intentionally **removed** — see §6.
 
 ---
 
-## The problem
+## 1. Task & data
 
-| Pool | Geometry | Labels |
+Three independent retrieval pools (rank a query only against its own pool):
+
+| Pool | Geometry | Labels | Difficulty |
+|---|---|---|---|
+| **dataset1** | registered preop pairs; query & target share one grid | **350 labeled pairs** (the only training data) | easy (source domain) |
+| **dataset2** | query & target each **independently** warped — random rigid (rot+shift) **+** nonlinear elastic | none | **hard** (the wall) |
+| **dataset3** | preop→intraop; target resampled into the query's physical space (already aligned), but surgery moves/removes tissue | none | aligned, but cross-modal+surgical |
+
+Counts: d1 40/100, d2 40/100, d3 20/77 (val/test) → full submission = **377 rows**.
+All volumes are NIfTI, RAS, 1 mm isotropic; shapes vary (d1/d2 are 240×240×155).
+
+## 2. Metric & the bijection
+
+```
+score = (MRR_d1 + MRR_d2 + MRR_d3) / 3        # mean reciprocal rank
+```
+A single-dataset partial submission shows `MRR_d / 3` → ×3 recovers that dataset's
+MRR (basis of all diagnostics). **Public LB = the 100 validation queries (~27%);
+private = the 277 test queries (73%).**
+
+**Bijection:** in every pool #queries == #targets, one-to-one. Retrieval is a
+**linear assignment problem** → solved with the Hungarian algorithm (worth **+0.068**
+overall, see §7). It is the given task structure, not a leak.
+
+## 3. Pipeline
+
+```
+NIfTI ─► intensity-normalize ─► resample to 44³ ─► [geometry step] ─► feature
+      ─► PCA + Ridge cross-modal map (fit on d1) ─► cosine ─► Hungarian ─► ranking
+```
+
+**Preprocessing.** Load → foreground mask → robust 1/99-percentile window →
+clip to [0,1] → trilinear resample to a fixed `44³` grid.
+
+**Cross-modal map (PCA + Ridge).** T1 and T2 differ in appearance, so we learn the
+relationship on the 350 labeled d1 pairs: whitening PCA on each modality, then Ridge
+maps query-codes → target-codes. Score = cosine in the shared code space.
+
+**Geometry step (per pool):**
+- **d1, d2 — template normalization.** d1 train pairs are registered, so the mean
+  T1 and mean T2 form two templates that share one grid. Each volume is rigidly
+  registered to its **same-modality** template (intramodal NCC — robust). This
+  removes pose so the d1-trained map transfers to d2's independent warps.
+- **d3 — MIND on the aligned volumes (no template registration).** d3 is already
+  co-registered, so instead of intensity we use the **MIND** descriptor
+  (modality-independent self-similarity, §5) cropped to the brain bounding box.
+
+**Hungarian.** The cosine matrix is turned into a one-to-one assignment; the
+assigned target is forced to rank 1, the rest by similarity.
+
+## 4. Results (verified on Kaggle)
+
+### Per-dataset validation MRR (leak-free pipeline)
+
+| dataset | method | MRR |
 |---|---|---|
-| **dataset1** | registered preop pairs; query & target share a grid | 350 labeled pairs (the *only* training data) |
-| **dataset2** | query & target **independently** rigid+elastic warped | none |
-| **dataset3** | preop→intraop, target resampled into query space; surgery alters tissue | none |
+| dataset1 | template + Hungarian | **0.964** |
+| dataset2 | template + Hungarian | **0.749** (the wall) |
+| dataset3 | bbox + **MIND** g56 + Hungarian | **0.700** |
 
-Score = `(MRR1 + MRR2 + MRR3) / 3`. In each pool #queries == #targets and the
-match is one-to-one — retrieval is a **linear assignment problem** (→ Hungarian).
+### dataset3 method ladder (shows the geometry leak)
 
-## Pipeline
+| d3 method | MRR | note |
+|---|---|---|
+| raw-box grid | **1.000** | rides the FOV/affine geometry leak (see §6) |
+| bbox-crop grid | 0.442 | FOV leak removed; co-registration kept |
+| bbox-crop MIND g44 | 0.656 | modality-invariant feature |
+| **bbox-crop MIND g56** | **0.700** | finer grid (d3 is aligned → resolution helps) |
+| template-register | 0.251 | co-registration also removed (fully leak-free) |
 
-```
-volume → intensity normalize → resample to 44³ grid → φ (flatten, center, L2)
-                                      │
-        ┌─────────────────────────────┼───────────────────────────────┐
-   dataset1/2: register to            dataset3: NO registration
-   same-modality template             (already aligned; registering hurts)
-   (T1=mean d1 queries, T2=mean d1 targets)
-   d2 also: deformable Demons + slab
-        └─────────────────────────────┼───────────────────────────────┘
-                                      │
-            PCA(query) + Ridge → PCA(target)   ·   cosine similarity
-                                      │
-                    Hungarian assignment → per-query ranking
-```
+### Full-submission scores
 
-Key ideas (details in [`docs/architecture.md`](docs/architecture.md)):
+| submission | overall | notes |
+|---|---|---|
+| `mix_leakfree_d1d2template_d3mind_g56.csv` | **0.80462** | **best leak-free** |
+| leak-free, d3 MIND g44 | 0.78971 | |
+| leak-free, d3 bbox-grid, **with** Hungarian | 0.71836 | |
+| leak-free, d3 bbox-grid, **no** Hungarian | 0.65057 | Hungarian = +0.068 |
+| d1+d2 template + **d3 raw-grid** | 0.90444 | d3 uses the geometry shortcut |
+| d2 Sinkhorn rerank | 0.89133 | regressed → off by default |
+| external BraTS matching (removed) | 0.91981 | data leak, not in this repo |
 
-1. **Intensity normalization** — robust percentile window, foreground mask, 44³ grid.
-2. **PCA + Ridge cross-modal map** — learned on the 350 labeled d1 pairs; maps T1
-   codes → T2 codes (`α=100`, 128 components).
-3. **Template normalization** — rigidly register each volume to its same-modality
-   d1 mean template (intramodal NCC, robust). The d2 fix: MRR 0.39 → 0.75; also
-   lifts d1 0.877 → 0.964. **Skip it for d3** (already aligned — registering drops
-   d3 to 0.251; raw grid feature → ~1.0 instead).
-4. **Deformable Demons + slab fusion** — the real lever for d2's elastic warp;
-   the only thing beyond rigid that *transferred* to the leaderboard
-   (0.90444 → 0.91874 → 0.91981).
-5. **Hungarian assignment** — exploit the bijection; assign then rank.
+## 5. MIND (Modality-Independent Neighbourhood Descriptor)
 
-## Repo layout
+Replaces intensity with **local self-similarity**: for each voxel, how its local
+patch relates to neighboring patches *within the same image*. That pattern is the
+same across modalities (an edge is an edge in T1 and T2), turning a cross-modal
+match into a quasi-mono-modal one. We compute a 6-channel field
+`MIND(x,r)=exp(-Dp(x,r)/V(x))` (`Dp`=patch SSD to neighbor `r`, `V`=local variance).
+It helps **d3** (aligned: fields overlap voxel-wise, 0.442→0.700) but **not d2**
+(independent warp: fields don't line up — MIND fixes modality, not geometry).
 
-| File | Role |
-|---|---|
-| `d2_template_retrieval.py` | Main entry: d1/d2/d3 retrieval via template normalization (`build_model`, `score_pool`). `--no-register` for d3. |
-| `d2_methods.py` | Feature extractors, PCA+Ridge map (`_fit_pca_ridge`), rigid registration (`_register_to_template`). |
-| `deform_lib.py` | The 0.91981 lever: deformable Demons (`_deformable_to_template`) + per-slab features + fusion. |
-| `d2_deform_slab_submit.py` | Entry: builds the winning deformable+slab d2 part. |
-| `alpha_mix.py` | Ridge-`α` mix builder (fast refit + rescore from cached features). |
-| `synthetic_d2_eval.py` | Offline synthetic-dataset2 validator — rank methods without spending Kaggle submissions. |
-| `generate_augmented_train_data.py` | Augmentation pipeline (see `docs/augmentation.md`). |
-| `docs/` | `architecture.md`, `augmentation.md`. |
-| `assets/` | Example query/target pairs for dataset2 and dataset3. |
-| `sample_submission.csv` | Kaggle submission format reference. |
-| `archive/` | Parked research and dead ends (see `archive/README.md`). |
+## 6. Data-leak analysis (and why it's removed)
 
-## How to run
+Multiple leaderboard teams hit 1.0. Investigated exhaustively (`docs/architecture.md`,
+git history); findings:
 
-Requires Python ≥ 3.12. Scripts carry inline [uv](https://docs.astral.sh/uv/)
-dependency headers (nibabel, numpy, scipy, scikit-learn), so `uv run <script>`
-auto-installs deps. Place the competition data at
-`ehl-paris-medical-image-retrieval/` (gitignored).
+- **No leak in d2** — IDs are random hashes (no hash/sort/row relation), file sizes
+  constant, NIfTI headers byte-identical constants, affines a single constant,
+  timestamps batched, no byte-duplicate files. d2's ~0.749 is the honest ceiling
+  (≈13 methods tried, §7).
+- **dataset3 geometry leak (real).** d3 targets are resampled into the query's
+  physical space, so a true pair shares an **exact affine/FOV**. Matching by
+  affine-equality is a pure metadata leak (trivial 1.0). Even the content path
+  rides it: resizing the unique per-subject box into the 44³ cube bakes in the FOV
+  fingerprint + alignment. Cropping to the brain box removes the FOV part
+  (1.0→0.442); full template-registration removes the alignment too (→0.251). We
+  ship the **bbox + MIND** variant (0.700) as the honest middle.
+- **External BraTS matching (the 1.0 exploit).** d1/d2 are public **BraTS-GLI**
+  volumes. Registering each warped d2 image intramodally to the clean public BraTS
+  library recovers the subject identity → its known T2 → the pairing → ~1.0 (works
+  on private). This is a genuine data leak; the exploit code has been **removed**.
+- **Public-LB probing.** A single-query partial submission scores `1/(120·rank)`,
+  revealing each validation answer — inflates public only, not private. Not used.
+
+## 7. What did not work (negative results)
+
+dataset2 is the wall; everything below tied or regressed vs template's 0.749:
+deeds registration-residual (0.752, tie), 3D SIFT-Rank keypoints (0.436), SynthSeg
+region-volumes (0.432), canonical PCA-axis, MIND-after-registration (neutral),
+affine/deformable registration, grid56, augmentation refit (synthetic & real, both
+worse), rich/sliceview features, Ridge-alpha (inert under Hungarian), Sinkhorn
+(0.891), scratch 3D contrastive (0.04), BrainIAC frozen/fine-tuned (0.15/0.045).
+Root cause: cross-modal + **independent** rigid+elastic warp + only 350 train pairs
+destroys the per-subject signal honest methods need.
+
+## 8. Reproduce
 
 ```bash
-DATA=ehl-paris-medical-image-retrieval
+# environment
+python3 -m venv .venv && .venv/bin/pip install numpy scipy scikit-learn nibabel
 
-# dataset1 + dataset2 — rigid template normalization
-uv run d2_template_retrieval.py --data-root $DATA \
-  --datasets dataset1 dataset2 --grid 44 --assignment \
-  --out submissions/_part_d1d2_template.csv
+DR=ehl-paris-medical-image-retrieval
 
-# dataset2 — deformable Demons + slab (the winning d2 part)
-uv run d2_deform_slab_submit.py --data-root $DATA --grid 44 \
-  --smooth 3.0 --slab-k 10 --slab-s 16 \
-  --out submissions/_part_d2_deformslab.csv
+# d1 + d2 (template normalization, Hungarian)
+.venv/bin/python d2_template_retrieval.py --data-root $DR --datasets dataset1 dataset2 \
+  --splits val test --grid 44 --assignment --out submissions/_d1d2.csv
 
-# dataset3 — grid feature, NO registration
-uv run d2_template_retrieval.py --data-root $DATA \
-  --datasets dataset3 --grid 44 --no-register --assignment \
-  --out submissions/_part_d3_grid.csv
+# d3 (leak-free: brain bbox + MIND, finer grid)
+.venv/bin/python d2_template_retrieval.py --data-root $DR --datasets dataset3 \
+  --splits val test --grid 56 --assignment --no-register --bbox-crop --mind \
+  --out submissions/_d3.csv
 
-# Final mix = d1 (template) + d2 (deform+slab) + d3 (grid), concatenated.
+# assemble the 377-row mix (concatenate both CSVs' rows under one header), validate, submit
+.venv/bin/python classical_retrieval.py --data-root $DR validate submissions/<mix>.csv
+kaggle competitions submit -c ehl-paris-medical-image-retrieval -f submissions/<mix>.csv -m "msg"
 ```
 
-Validate methods offline before spending a Kaggle submission:
+For the d3 raw-grid (0.904) variant, drop `--bbox-crop --mind` and use `--grid 44`.
 
-```bash
-uv run synthetic_d2_eval.py --n-eval 60 --n-train 250 --grid 44 \
-  --max-rot-deg 12 --max-shift 6 --elastic-sigma 8 --elastic-alpha 3 \
-  --methods canonical template
-```
+## 9. Repo layout
 
-Normalized features are cached in `.d2cache/`; deformable fields in `.deformcache/`
-(both regenerable, gitignored).
+- `d2_template_retrieval.py` — main pipeline (template norm, `--mind`, `--bbox-crop`,
+  `--rerank sinkhorn`, `--no-register`, Hungarian). Caches features in `.d2cache/`.
+- `d2_methods.py` — feature extractors & the synthetic-d2 method zoo.
+- `synthetic_d2_eval.py` — synthetic-d2 validator (independent rigid+elastic warps on
+  labeled d1 pairs → offline method ranking without spending submissions).
+- `classical_retrieval.py` — feature cache + submission validator.
+- `assignment_rerank.py` — Hungarian re-ranking of classical score matrices.
+- `docs/architecture.md` — detailed architecture; `docs/augmentation.md` — aug notes.
+- Research / negative-evidence scripts (deeds, SIFT, SynthSeg, BrainIAC, contrastive)
+  kept for reference.
 
-## Results
-
-| Submission | Public | Note |
-|---|---|---|
-| canon20 flipaug (prior best) | 0.65137 | baseline |
-| d1 pca · d2 **template** · d3 pca | 0.77071 | d2 fix |
-| d1 **template** · d2 template · d3 pca | 0.80127 | template helps d1 |
-| d1 template · d2 template · d3 **grid** | 0.90444 | grid for d3 |
-| d1 template · d2 **deformable** · d3 grid | 0.91874 | elastic reg transfers |
-| d1 template · d2 **deform + slab** · d3 grid | **0.91981** | **best** |
-
-Per-dataset MRR at best mix: `MRR1 ≈ 0.964`, `MRR2 ≈ 0.75`, `MRR3 ≈ 1.0`.
-
-## What didn't work (see `archive/`)
-
-- **Deep contrastive 3D model** on augmented pairs — holdout MRR ≈0.04, far below
-  classical 0.90.
-- **Augmentation refit** of the classical map — *hurt* real d2 (0.749 → 0.628).
-- **BrainIAC foundation-model embeddings** (cosine/adapter/patch) — below classical.
-- **Pose-invariant descriptors**, **SIFT-Rank**, **MIND**, **deedsBCV re-rank**,
-  **Sinkhorn / fusion reranking**, **grid 56** — all parked.
-
-Lesson: only **registration** improvements transferred to the real leaderboard;
-reranking/fusion and data-distribution changes did not.
+Data, caches, venvs, and generated submissions are git-ignored.
