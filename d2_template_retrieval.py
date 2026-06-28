@@ -35,7 +35,7 @@ from scipy.optimize import linear_sum_assignment
 from sklearn.preprocessing import normalize
 
 from synthetic_d2_eval import _load_grid, read_pairs, resolve_image_path, load_normalized, downsample
-from d2_methods import _register_to_template, flat_feature, rich_feature, sliceview_feature, _fit_pca_ridge  # noqa: F401
+from d2_methods import _register_to_template, flat_feature, rich_feature, sliceview_feature, mind_feature, _fit_pca_ridge  # noqa: F401
 
 FEAT_FN = flat_feature  # swapped to rich_feature when --rich is passed
 BBOX_CROP = False        # crop to foreground (brain) bbox before downsample
@@ -73,7 +73,7 @@ def normalized_feature(
     data_root: Path, image_path: str, image_id: str, grid: int, template: np.ndarray,
     cache_dir: Path, register: bool = True
 ) -> np.ndarray:
-    fn = "_rich" if FEAT_FN is rich_feature else ("_slice" if FEAT_FN is sliceview_feature else "")
+    fn = "_rich" if FEAT_FN is rich_feature else ("_slice" if FEAT_FN is sliceview_feature else ("_mind" if FEAT_FN is mind_feature else ""))
     tag = f"g{grid}" + fn + ("" if register else "_noreg") + ("_bbox" if BBOX_CROP else "")
     cache = cache_dir / f"{image_id}_{tag}.npy"
     if cache.exists():
@@ -208,6 +208,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--bbox-crop", action="store_true", help="Crop to foreground brain bbox before downsample (de-leak FOV).")
     p.add_argument("--rich", action="store_true", help="Use multi-channel rich feature (intensity+edge+half-scale).")
     p.add_argument("--sliceview", action="store_true", help="Use multi-direction slice feature.")
+    p.add_argument("--mind", action="store_true", help="Use MIND modality-invariant feature.")
     p.add_argument("--no-register", action="store_true",
                    help="Skip template registration (use raw downsampled grid feature). "
                         "For already-aligned sets like dataset3.")
@@ -222,6 +223,8 @@ def main() -> None:
         FEAT_FN = rich_feature
     if args.sliceview:
         FEAT_FN = sliceview_feature
+    if args.mind:
+        FEAT_FN = mind_feature
     BBOX_CROP = args.bbox_crop
     model = build_model(args.data_root, args.grid, args.components, args.alpha,
                         args.fit_pair_csv, args.synth_aug_k)

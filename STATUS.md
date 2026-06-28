@@ -30,3 +30,15 @@ d3: intraop-таргет переложен в координаты preop-зап
 
 Стена d2 ≈0.749 подтверждена ~13 методами; честный потолок без лика BraTS = 0.904
 (если d3-grid ок) или 0.718 (строго, d3-bbox).
+
+## d2/d3 improvement attempts (2026-06-28, leak-free regime)
+
+- **d3 MIND (modality-invariant) — WIN.** On aligned d3, MIND beats raw grid:
+  d3-bbox grid 0.442 -> d3-bbox MIND **0.656** (partial 0.21859x3).
+  Leak-free full (d1 template + d2 template + d3 bbox MIND) = **0.78971** (vs 0.718 grid).
+- **d2 MIND-after-register: neutral** (synthetic 0.554 vs template 0.558) -> won't move
+  real d2. d2 wall (0.749) is geometry (independent warp), MIND fixes modality not geometry.
+- Next d3 levers (room at 0.656): finer grid MIND (d3 aligned, grid56/64 may help unlike
+  d2), MIND+grid rank-fusion. d2: exhausted honestly.
+
+Leak-free best so far: **0.78971** (d3 MIND). With d3-grid (FOV-leak) it's 0.904.
