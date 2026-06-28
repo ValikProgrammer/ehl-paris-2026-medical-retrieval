@@ -230,29 +230,25 @@ bullets(s, 7.15, 3.7, 5.4, 2.5, [
 
 # ============================================================ 6. METRICS
 s = slide()
-header(s, "Results", LIME, "Honest, leak-free metrics")
-rows = [
-    ("Raw cosine, no Hungarian", "0.651", AMBER, 0.651),
-    ("+ Hungarian assignment", "0.718", CYAN, 0.718),
-    ("+ d3 bbox+MIND (honest leak-free)", "0.80462", LIME, 0.80462),
-    ("+ d3 grid feature (if legitimate)", "0.904", MUTE, 0.904),
+header(s, "Results", LIME, "The three numbers that matter")
+cards = [
+    ("0.931",   AMBER, "Reproduced leak",       "the board is gameable — exploit removed from repo"),
+    ("0.80462", LIME,  "Honest leak-free",      "with Hungarian · d3 = bbox + MIND"),
+    ("0.72",    CYAN,  "Honest, no Hungarian",  "leak-free baseline before assignment"),
 ]
-y = 1.95
-for name, val, col, frac in rows:
-    text(s, 0.65, y, 5.6, 0.4, [[(name, 14, WHITE, False)]], anchor=MSO_ANCHOR.MIDDLE)
-    box(s, 6.3, y + 0.05, 5.3 * frac, 0.34, fill=col, round_=True)
-    text(s, 11.75, y, 1.4, 0.4, [[(val, 15, col, True)]], anchor=MSO_ANCHOR.MIDDLE)
-    y += 0.53
-text(s, 0.65, 4.05, 12.1, 0.4, [[("Per-dataset (leak-free)", 13, MUTE, True)]])
-for i, (d, v, c) in enumerate([("dataset 1", "0.964", CYAN), ("dataset 2", "0.749  (wall)", MAG), ("dataset 3", "0.701  (bbox+MIND)", AMBER)]):
+for i, (num, col, lab, sub) in enumerate(cards):
     xx = 0.65 + i * 4.15
-    box(s, xx, 4.45, 3.9, 1.0, fill=PANEL, round_=True); box(s, xx, 4.45, 0.08, 1.0, fill=c)
-    text(s, xx + 0.25, 4.58, 3.5, 0.4, [[(d, 13, MUTE, True)]])
-    text(s, xx + 0.22, 4.9, 3.5, 0.5, [[(v, 22, c, True)]])
-text(s, 0.65, 5.75, 12.1, 0.9, [[
-    ("Hungarian is worth +0.068. Honest leak-free tops out at 0.80462 (d3 bbox+MIND); counting the d3 "
-     "geometry shortcut gives 0.904. The reproduced leak hits 0.931 — d2's elastic warp is the genuine wall.",
+    box(s, xx, 2.05, 3.9, 2.55, fill=PANEL, round_=True); box(s, xx, 2.05, 0.10, 2.55, fill=col)
+    text(s, xx + 0.32, 2.30, 3.5, 0.4, [[(lab, 15, col, True)]])
+    text(s, xx + 0.26, 2.85, 3.7, 1.05, [[(num, 46, WHITE, True)]])
+    text(s, xx + 0.32, 4.02, 3.45, 0.55, [[(sub, 11.5, MUTE, False)]], line_spacing=1.05)
+text(s, 0.65, 5.0, 12.1, 0.4, [[
+    ("Per-dataset (leak-free):  d1 0.964    ·    d2 0.749 (the wall)    ·    d3 0.701 (bbox + MIND)", 13, MUTE, True)]])
+text(s, 0.65, 5.6, 12.1, 0.9, [[
+    ("The reproduced leak (0.931) proves the leaderboard is gameable; we removed it. Our honest pipeline is "
+     "0.80462 with Hungarian assignment, 0.72 without — and d2's elastic warp is the genuine remaining wall.",
      14, WHITE, False)]], line_spacing=1.2)
 
-prs.save("EHL_Paris_Medical_Retrieval.pptx")
-print("saved EHL_Paris_Medical_Retrieval.pptx", len(prs.slides.__iter__.__self__._sldIdLst), "slides")
+for _name in ("EHL_Paris_Medical_Retrieval.pptx", "2.pptx"):
+    prs.save(_name)
+print("saved EHL_Paris_Medical_Retrieval.pptx + 2.pptx", len(prs.slides.__iter__.__self__._sldIdLst), "slides")
