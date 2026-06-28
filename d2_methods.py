@@ -330,6 +330,70 @@ def m_template_affine(data):
     return _pca_ridge_scores(tq, tt, eq, et)
 
 
+def mind_descriptor(vol, dilation=1, patch=1):
+    """MIND: Modality-Independent Neighbourhood Descriptor (Heinrich 2012).
+    Per-voxel 6-channel self-similarity field; near-identical across T1/T2 of one
+    subject, and locally tolerant to smooth deformation. Pure numpy/scipy."""
+    from scipy.ndimage import uniform_filter
+    d = dilation
+    offsets = [(d,0,0),(-d,0,0),(0,d,0),(0,-d,0),(0,0,d),(0,0,-d)]
+    size = 2*patch+1
+    Dp = []
+    for o in offsets:
+        shifted = np.roll(vol, shift=o, axis=(0,1,2))
+        Dp.append(uniform_filter((vol-shifted)**2, size=size).astype(np.float32))
+    Dp = np.stack(Dp)                      # (6,D,H,W)
+    V = np.mean(Dp, axis=0) + 1e-6
+    mind = np.exp(-Dp / V)
+    mind /= (mind.max(axis=0, keepdims=True) + 1e-6)
+    return mind.astype(np.float32)         # (6,D,H,W)
+
+
+def mind_feature(vol):
+    """Flattened, L2-normalized MIND field as a retrieval feature."""
+    m = mind_descriptor(vol)
+    return _l2(m.reshape(-1))
+
+
+def m_template_mind(data):
+    t1 = data["train_q"].mean(axis=0); t2 = data["train_t"].mean(axis=0)
+    tq = np.stack([mind_feature(v) for v in data["train_q"]])
+    tt = np.stack([mind_feature(v) for v in data["train_t"]])
+    eq = np.stack([mind_feature(_register_to_template(v, t1)) for v in data["eval_q"]])
+    print("  mind q done", flush=True)
+    et = np.stack([mind_feature(_register_to_template(v, t2)) for v in data["eval_t"]])
+    print("  mind t done", flush=True)
+    return _pca_ridge_scores(tq, tt, eq, et)
+
+
+def sliceview_feature(vol, n_slices=16, ds=12):
+    """Multi-direction slice descriptor: along each of the 3 axes take n_slices
+    evenly-spaced slices, downsample each to ds x ds, concatenate all. Captures
+    structure from multiple viewing directions (a classical, no-torch stand-in for
+    Raptor-style multi-view slice features)."""
+    from scipy.ndimage import zoom as _zoom
+    g = vol.shape[0]
+    parts = []
+    for axis in range(3):
+        idx = np.linspace(0, vol.shape[axis]-1, n_slices).astype(int)
+        sl = np.take(vol, idx, axis=axis)                    # (n_slices, X, Y) along moved axis
+        sl = np.moveaxis(sl, axis, 0)
+        for s in sl:
+            parts.append(_zoom(s, ds/np.array(s.shape), order=1).reshape(-1))
+    return _l2(np.concatenate(parts).astype(np.float32))
+
+
+def m_template_sliceview(data):
+    t1 = data["train_q"].mean(axis=0); t2 = data["train_t"].mean(axis=0)
+    tq = np.stack([sliceview_feature(v) for v in data["train_q"]])
+    tt = np.stack([sliceview_feature(v) for v in data["train_t"]])
+    eq = np.stack([sliceview_feature(_register_to_template(v, t1)) for v in data["eval_q"]])
+    print("  sliceview q done", flush=True)
+    et = np.stack([sliceview_feature(_register_to_template(v, t2)) for v in data["eval_t"]])
+    print("  sliceview t done", flush=True)
+    return _pca_ridge_scores(tq, tt, eq, et)
+
+
 def rich_feature(vol):
     """Post-registration multi-channel feature: intensity + gradient-magnitude
     (edges) + a half-scale intensity map. More discriminative than raw intensity."""
@@ -488,5 +552,7 @@ METHODS = {
     "template_augfit": m_template_augfit,
     "template_robust": m_template_robust,
     "template_rich": m_template_rich,
+    "template_mind": m_template_mind,
+    "template_sliceview": m_template_sliceview,
     "template_canon": m_template_canon,
 }

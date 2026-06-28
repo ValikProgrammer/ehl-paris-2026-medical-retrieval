@@ -116,6 +116,27 @@ reg, rich features, synth-augfit, real-augfit. Best verified = 0.90444. Reaching
 model (pretrained 3D medical encoder fine-tuned on the 850 aug pairs) — scratch
 contrastive already failed (0.04), so this is uncertain and large effort.
 
+## Research findings (Firecrawl, 4 subagents) — methods to try for d2
+
+Theory: fine-tuning distorts pretrained features under distribution shift (arXiv
+2202.10054) -> explains our fine-tune/refit regressions; stay frozen/no-training.
+
+Ranked (ROI x feasibility for 350 pairs, CPU + ROCm GPU):
+1. MIND / MIND-SSC self-similarity descriptor as the feature front-end (CPU, no
+   training; modality-independent + locally warp-tolerant). Implemented as
+   `m_template_mind` / `mind_descriptor` in d2_methods.py. TESTING ON HARNESS.
+2. SynthMorph/EasyReg or BrainMorph (pretrained, contrast-agnostic registration):
+   use POST-REGISTRATION RESIDUAL as the d2 cost matrix -> Hungarian. Highest d2
+   ceiling. GPU, top-K rerank. Caveat: residual not registration-success (inter-
+   subject reg also works). Repos: alanqrwang/brainmorph, mattiaspaul/deedsBCV,
+   FreeSurfer EasyReg/SynthMorph.
+3. SynthSeg region-volume / label-map matching (pretrained, contrast-invariant,
+   warp-robust region volumes). github.com/BBillot/SynthSeg.
+4. Raptor train-free 3D embedding (sriramlab/raptor); BrainIAC FROZEN + Procrustes
+   head (not fine-tune).
+AVOID: GAN/diffusion synthesis (data too small), scratch contrastive (failed 0.04),
+fine-tuning (distorts), disease foundation models.
+
 ## Push toward 0.95 (goal)
 
 Need MRR sum 2.85 (currently 2.713). d3~1.0 maxed, d1~0.964 near ceiling, so d2
@@ -139,6 +160,31 @@ on the ROCm GPU; monitoring holdout all-gallery MRR vs the scratch failure (0.04
 and frozen-cosine (0.15). On completion it auto-embeds all pools + Hungarian +
 writes /app/submissions/brainiac_finetune_submission.csv. Then pull, mix, submit.
 This is the remaining higher-ceiling shot at 0.95; uncertain.
+
+## Submit log (cont.)
+- 2026-06-28 06:14 — `siftrank_d2.csv` → **0.14523** (d2 MRR ~0.436; SIFT-Rank fails cross-modal+warp).
+- 2026-06-28 06:14 — `mix_hung_d1template_d2sift_d3grid.csv` → **0.80004** (regressed).
+- 2026-06-28 05:42 — `mix_hung_d1d2sliceview_d3grid.csv` → **0.81042** (regressed; slice-pooling = global descriptor, same wall).
+- 2026-06-28 05:36 — `d2_deeds_rerank.csv` → **0.25061** (d2 MRR ~0.752; ties template 0.749).
+- 2026-06-28 05:36 — `mix_hung_d1template_d2deeds_d3grid.csv` → **0.90541** (NEW BEST, +0.001).
+  deeds registration-residual discriminated 6/6 on registered d1 but only TIES template
+  on d2's independent-elastic warp — the residual margin collapses there. Marginal win.
+  d2 ceiling ~0.75 confirmed across template / registration / augmentation / deep.
+- 2026-06-27 23:15 — `mix_hung_d1d2strongaug_d3grid.csv` (2100-pair aug map refit) → **0.80590**.
+  Worse than 1k-aug (0.842) and best (0.904). Augmentation-refit hurts the linear map
+  MONOTONICALLY (more aug = worse). Definitive dead end. Best stays 0.90444.
+
+## deeds registration-residual — VALIDATED on real data, building d2 reranker
+
+deedsBCV (MIND-SSC deformable registration, built locally `make SLOW=1`) post-reg
+MIND residual discriminates same-subject cross-modal: 6/6 real d1 pairs had the
+true T2 as the minimum residual (diag ~0.10 vs off-diag ~0.13-0.16). This is the
+research-backed high-ceiling lever for d2. `deeds_d2_rerank.py`: template top-K
+prefilter -> deeds-residual rerank -> Hungarian. Running locally (~2h, top-K=6,
+96^3, ~8s/pair). On finish: merge into best mix, submit directly.
+
+Also running: strong-aug map refit on server (2100-pair manifest), per user
+request to fit current best on server data and submit directly (no synthetic gate).
 
 ## In flight
 

@@ -9,14 +9,19 @@ ehl-paris-medical-image-retrieval
 __pycache__/
 artifacts/
 
+# external tools built/cloned locally (research-only deps; build separately)
+deedsBCV/
+3DSIFT-Rank/
+
 # generated outputs
 submissions/
 submission.csv
 *.log
 *.pdf
 
-# credentials / hosts
+# credentials / hosts / mcp keys
 .ssh_known_hosts
+.mcp.json
 
 # editor / tooling / agent state
 .idea/

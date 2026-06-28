@@ -35,7 +35,7 @@ from scipy.optimize import linear_sum_assignment
 from sklearn.preprocessing import normalize
 
 from synthetic_d2_eval import _load_grid, read_pairs, resolve_image_path
-from d2_methods import _register_to_template, flat_feature, rich_feature, _fit_pca_ridge  # noqa: F401
+from d2_methods import _register_to_template, flat_feature, rich_feature, sliceview_feature, _fit_pca_ridge  # noqa: F401
 
 FEAT_FN = flat_feature  # swapped to rich_feature when --rich is passed
 
@@ -61,8 +61,8 @@ def normalized_feature(
     data_root: Path, image_path: str, image_id: str, grid: int, template: np.ndarray,
     cache_dir: Path, register: bool = True
 ) -> np.ndarray:
-    rich = FEAT_FN is rich_feature
-    tag = f"g{grid}" + ("_rich" if rich else "") + ("" if register else "_noreg")
+    fn = "_rich" if FEAT_FN is rich_feature else ("_slice" if FEAT_FN is sliceview_feature else "")
+    tag = f"g{grid}" + fn + ("" if register else "_noreg")
     cache = cache_dir / f"{image_id}_{tag}.npy"
     if cache.exists():
         return np.load(cache)
@@ -179,6 +179,7 @@ def parse_args() -> argparse.Namespace:
                         "copies of dataset1 train (local, no extra data needed).")
     p.add_argument("--assignment", action="store_true")
     p.add_argument("--rich", action="store_true", help="Use multi-channel rich feature (intensity+edge+half-scale).")
+    p.add_argument("--sliceview", action="store_true", help="Use multi-direction slice feature.")
     p.add_argument("--no-register", action="store_true",
                    help="Skip template registration (use raw downsampled grid feature). "
                         "For already-aligned sets like dataset3.")
@@ -191,6 +192,8 @@ def main() -> None:
     global FEAT_FN
     if args.rich:
         FEAT_FN = rich_feature
+    if args.sliceview:
+        FEAT_FN = sliceview_feature
     model = build_model(args.data_root, args.grid, args.components, args.alpha,
                         args.fit_pair_csv, args.synth_aug_k)
     rows: list[dict[str, str]] = []
