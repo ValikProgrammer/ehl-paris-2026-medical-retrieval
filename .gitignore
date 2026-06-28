@@ -1,5 +1,6 @@
 # data + heavy artifacts
 ehl-paris-medical-image-retrieval
+data/
 .classical_cache/
 .canonical_cache/
 .d2cache/
@@ -18,13 +19,18 @@ submissions/
 submission.csv
 *.log
 *.pdf
+*.tex.pdf
+look.py
+hackathon_brief.tex
 
 # credentials / hosts / mcp keys
 .ssh_known_hosts
 .mcp.json
 
 # editor / tooling / agent state
+.DS_Store
 .idea/
+.cursor/
 .cache/
 .mplconfig/
 .pycache/

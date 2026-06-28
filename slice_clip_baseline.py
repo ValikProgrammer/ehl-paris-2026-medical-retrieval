@@ -6,6 +6,7 @@ from __future__ import annotations
 #   "torch>=2.7.0",
 #   "numpy>=2.0",
 #   "nibabel>=5.3",
+#   "matplotlib>=3.8",
 #   "tqdm>=4.67",
 # ]
 # ///
@@ -16,7 +17,8 @@ Tiny 2D slice CLIP baseline for the Brain MRI Cross-Modal Retrieval Challenge.
 The script demonstrates:
 - MONAI loading, channel handling, 1 mm spacing, intensity scaling, slice
   extraction, resizing, typing, and PersistentDataset caching.
-- A tiny random image-noise augmentation during training.
+- Train-time 3D augmentation that independently deforms query and target
+  volumes before slice extraction.
 - Two small 2D CNN encoders trained with a CLIP-style in-batch contrastive loss.
 - Submission generation by ranking gallery targets by embedding similarity.
 
@@ -47,6 +49,7 @@ test queries for dataset1, dataset2, and dataset3:
 import argparse
 import csv
 import json
+import math
 import random
 from pathlib import Path
 
@@ -61,7 +64,14 @@ from monai.transforms import (
     LoadImaged,
     MapTransform,
     Orientationd,
+    Rand3DElasticd,
+    RandAdjustContrastd,
+    RandAffined,
+    RandBiasFieldd,
+    RandCoarseDropoutd,
     RandGaussianNoised,
+    RandScaleIntensityd,
+    RandShiftIntensityd,
     ScaleIntensityd,
     Spacingd,
 )
@@ -76,8 +86,25 @@ CONFIG = {
     "spacing_mm": (1.0, 1.0, 1.0),
     "slice_positions": (0.35, 0.50, 0.65),
     "image_size": 96,
+    "augmentation_preset": "geom",
+    "affine_probability": 0.85,
+    "affine_rotate_degrees": 18.0,
+    "affine_translate_voxels": 12.0,
+    "affine_scale": 0.10,
+    "elastic_probability": 0.45,
+    "elastic_sigma_range": (5.0, 8.0),
+    "elastic_magnitude_range": (60.0, 140.0),
+    "bias_field_probability": 0.30,
+    "contrast_probability": 0.30,
+    "contrast_gamma": (0.75, 1.35),
+    "intensity_probability": 0.30,
+    "intensity_scale": 0.10,
+    "intensity_shift": 0.10,
     "noise_probability": 0.3,
     "noise_std": 0.05,
+    "coarse_dropout_probability": 0.15,
+    "coarse_dropout_holes": 2,
+    "coarse_dropout_size": (20, 20, 12),
     "epochs": 500,
     "batch_size": 128,
     "learning_rate": 1e-3,
@@ -86,7 +113,7 @@ CONFIG = {
     "similarity_scale": 5.0,
     "max_grad_norm": 1.0,
     "num_workers": 0,
-    "device": "mps" if torch.backends.mps.is_available() else "cpu",
+    "device": "auto",
 }
 
 
@@ -290,46 +317,182 @@ def collect_prediction_sets(
     return sets
 
 
-def monai_transform(augment: bool) -> Compose:
-    """Build the MONAI pipeline; optional noise happens after cached slices."""
-    deterministic = [
+def degrees_to_radians(value: float) -> float:
+    """Convert config degrees to MONAI radians."""
+    return float(value) * math.pi / 180.0
+
+
+def resolve_device_name(device: str) -> str:
+    """Use CUDA on servers, MPS on Apple Silicon, otherwise CPU."""
+    if device != "auto":
+        return device
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def augmentation_transforms(preset: str) -> list:
+    """Return train-time transforms from the augmentation recipe in the brief."""
+    if preset == "none":
+        return []
+
+    rotate = degrees_to_radians(float(CONFIG["affine_rotate_degrees"]))
+    translate = float(CONFIG["affine_translate_voxels"])
+    scale = float(CONFIG["affine_scale"])
+
+    geometry_transforms = [
+        RandAffined(
+            keys="image",
+            prob=float(CONFIG["affine_probability"]),
+            rotate_range=(rotate, rotate, rotate),
+            translate_range=(translate, translate, translate),
+            scale_range=(scale, scale, scale),
+            mode="bilinear",
+            padding_mode="border",
+        ),
+        Rand3DElasticd(
+            keys="image",
+            prob=float(CONFIG["elastic_probability"]),
+            sigma_range=tuple(CONFIG["elastic_sigma_range"]),
+            magnitude_range=tuple(CONFIG["elastic_magnitude_range"]),
+            rotate_range=(rotate / 2.0, rotate / 2.0, rotate / 2.0),
+            translate_range=(translate / 2.0, translate / 2.0, translate / 2.0),
+            scale_range=(scale / 2.0, scale / 2.0, scale / 2.0),
+            mode="bilinear",
+            padding_mode="border",
+        ),
+    ]
+    if preset == "geom":
+        return geometry_transforms
+
+    intensity_transforms = [
+        RandBiasFieldd(
+            keys="image",
+            prob=float(CONFIG["bias_field_probability"]),
+        ),
+        RandAdjustContrastd(
+            keys="image",
+            prob=float(CONFIG["contrast_probability"]),
+            gamma=tuple(CONFIG["contrast_gamma"]),
+        ),
+        RandScaleIntensityd(
+            keys="image",
+            factors=float(CONFIG["intensity_scale"]),
+            prob=float(CONFIG["intensity_probability"]),
+        ),
+        RandShiftIntensityd(
+            keys="image",
+            offsets=float(CONFIG["intensity_shift"]),
+            prob=float(CONFIG["intensity_probability"]),
+        ),
+        RandGaussianNoised(
+            keys="image",
+            prob=float(CONFIG["noise_probability"]),
+            mean=0.0,
+            std=float(CONFIG["noise_std"]),
+        ),
+    ]
+
+    if preset == "light":
+        return [geometry_transforms[0], *intensity_transforms]
+    if preset == "geom_contrast":
+        return [*geometry_transforms, *intensity_transforms]
+    if preset != "brief":
+        raise ValueError(f"Unknown augmentation preset: {preset}")
+
+    transforms = [*geometry_transforms, *intensity_transforms]
+    transforms.append(
+        RandCoarseDropoutd(
+            keys="image",
+            holes=int(CONFIG["coarse_dropout_holes"]),
+            spatial_size=tuple(CONFIG["coarse_dropout_size"]),
+            dropout_holes=True,
+            fill_value=0.0,
+            prob=float(CONFIG["coarse_dropout_probability"]),
+        )
+    )
+    return transforms
+
+
+def monai_transform(augment: bool, augmentation_preset: str | None = None) -> Compose:
+    """Build the MONAI pipeline; training augmentation happens before slicing."""
+    deterministic_before_slice = [
         LoadImaged(keys="image", image_only=True),
         EnsureChannelFirstd(keys="image"),
         Orientationd(keys="image", axcodes="RAS", labels=None),
         Spacingd(keys="image", pixdim=CONFIG["spacing_mm"], mode="bilinear"),
         ScaleIntensityd(keys="image", minv=0.0, maxv=1.0),
+    ]
+    deterministic_after_augmentation = [
         SliceStackd(
             keys="image",
             positions=tuple(CONFIG["slice_positions"]),
             image_size=int(CONFIG["image_size"]),
         ),
         EnsureTyped(keys="image"),
-    ] # monai persistent dataset knows which transforms are deterministic and caches the results after the last deterministic transform automatically
-    random_augmentation = []
-    if augment:
-        random_augmentation.append(
-            RandGaussianNoised(
-                keys="image",
-                prob=float(CONFIG["noise_probability"]),
-                mean=0.0,
-                std=float(CONFIG["noise_std"]),
-            )
-        )
-    return Compose(deterministic + random_augmentation)
+    ]
+    preset = augmentation_preset or str(CONFIG["augmentation_preset"])
+    random_augmentation = augmentation_transforms(preset) if augment else []
+    return Compose(deterministic_before_slice + random_augmentation + deterministic_after_augmentation)
 
 
-def make_image_dataset(images: dict[str, Path], example_root: Path, augment: bool) -> PersistentDataset:
+def make_image_dataset(
+    images: dict[str, Path],
+    example_root: Path,
+    augment: bool,
+    augmentation_preset: str | None = None,
+) -> PersistentDataset:
     """Create the MONAI dataset; it handles cache reads/writes itself."""
     cache_dir = example_root / str(CONFIG["cache_dir"])
     cache_dir.mkdir(parents=True, exist_ok=True)
     rows = [{"image": str(path), "id": image_id} for image_id, path in sorted(images.items())]
-    return PersistentDataset(data=rows, transform=monai_transform(augment=augment), cache_dir=cache_dir)
+    return PersistentDataset(
+        data=rows,
+        transform=monai_transform(augment=augment, augmentation_preset=augmentation_preset),
+        cache_dir=cache_dir,
+    )
 
 
-def train_model(train_dataset: PairImageDataset) -> SliceCLIP:
+def write_loss_history(path: Path, history: list[dict[str, float]]) -> None:
+    """Write epoch-level training loss for later inspection."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["epoch", "loss"])
+        writer.writeheader()
+        writer.writerows(history)
+
+
+def write_loss_plot(path: Path, history: list[dict[str, float]]) -> None:
+    """Save a simple loss curve PNG if matplotlib is available."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib is not installed; skipping loss plot")
+        return
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    epochs = [row["epoch"] for row in history]
+    losses = [row["loss"] for row in history]
+    fig, ax = plt.subplots(figsize=(7, 4), dpi=140)
+    ax.plot(epochs, losses, linewidth=1.8)
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("train loss")
+    ax.set_title("SliceCLIP training loss")
+    ax.grid(True, alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def train_model(train_dataset: PairImageDataset) -> tuple[SliceCLIP, list[dict[str, float]]]:
     """Train the tiny dual encoder with in-batch negatives."""
     torch.manual_seed(int(CONFIG["seed"]))
-    device = torch.device(str(CONFIG["device"]))
+    device = torch.device(resolve_device_name(str(CONFIG["device"])))
     model = SliceCLIP(int(CONFIG["embedding_dim"])).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(CONFIG["learning_rate"]))
     loss_fn = nn.CrossEntropyLoss()
@@ -341,6 +504,7 @@ def train_model(train_dataset: PairImageDataset) -> SliceCLIP:
     )
 
     model.train()
+    history: list[dict[str, float]] = []
     for epoch in range(1, int(CONFIG["epochs"]) + 1):
         total_loss = 0.0
         total_seen = 0
@@ -356,8 +520,10 @@ def train_model(train_dataset: PairImageDataset) -> SliceCLIP:
             optimizer.step()
             total_loss += float(loss.item()) * len(query_batch)
             total_seen += len(query_batch)
-        print(f"epoch {epoch:03d} loss={total_loss / max(total_seen, 1):.5f}")
-    return model
+        epoch_loss = total_loss / max(total_seen, 1)
+        history.append({"epoch": float(epoch), "loss": float(epoch_loss)})
+        print(f"epoch {epoch:03d} loss={epoch_loss:.5f}")
+    return model, history
 
 
 @torch.no_grad()
@@ -422,6 +588,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--query-csv", type=Path, action="append", required=True)
     parser.add_argument("--gallery-csv", type=Path, action="append", required=True)
     parser.add_argument("--out", type=Path, default=Path("slice_cnn_submission.csv"))
+    parser.add_argument(
+        "--augmentation-preset",
+        choices=["none", "geom", "geom_contrast", "light", "brief"],
+        default=str(CONFIG["augmentation_preset"]),
+        help="Train-time augmentation: none, geom affine/elastic, geom_contrast affine/elastic/intensity, light affine/intensity, or brief with dropout.",
+    )
+    parser.add_argument("--epochs", type=int, default=int(CONFIG["epochs"]))
+    parser.add_argument("--batch-size", type=int, default=int(CONFIG["batch_size"]))
+    parser.add_argument("--learning-rate", type=float, default=float(CONFIG["learning_rate"]))
+    parser.add_argument("--num-workers", type=int, default=int(CONFIG["num_workers"]))
+    parser.add_argument("--device", default=str(CONFIG["device"]), help="auto, cuda, mps, or cpu")
+    parser.add_argument("--loss-csv", type=Path, default=None)
+    parser.add_argument("--loss-plot", type=Path, default=None)
     return parser.parse_args()
 
 
@@ -430,6 +609,11 @@ def main() -> None:
     args = parse_args()
     random.seed(int(CONFIG["seed"]))
     np.random.seed(int(CONFIG["seed"]))
+    CONFIG["epochs"] = args.epochs
+    CONFIG["batch_size"] = args.batch_size
+    CONFIG["learning_rate"] = args.learning_rate
+    CONFIG["num_workers"] = args.num_workers
+    CONFIG["device"] = args.device
 
     example_root = Path(__file__).resolve().parent
     data_root = args.data_root.resolve()
@@ -456,6 +640,7 @@ def main() -> None:
         json.dumps(
             {
                 "config": CONFIG,
+                "augmentation_preset": args.augmentation_preset,
                 "num_train_images": len(train_images),
                 "num_inference_images": len(inference_images),
                 "num_train_pairs": len(train_pairs),
@@ -463,10 +648,19 @@ def main() -> None:
             indent=2,
         )
     )
-    train_image_dataset = make_image_dataset(train_images, example_root, augment=True)
+    train_image_dataset = make_image_dataset(
+        train_images,
+        example_root,
+        augment=args.augmentation_preset != "none",
+        augmentation_preset=args.augmentation_preset,
+    )
     inference_image_dataset = make_image_dataset(inference_images, example_root, augment=False)
     train_dataset = PairImageDataset(train_pairs, train_image_dataset)
-    model = train_model(train_dataset)
+    model, loss_history = train_model(train_dataset)
+    if args.loss_csv is not None:
+        write_loss_history(args.loss_csv, loss_history)
+    if args.loss_plot is not None:
+        write_loss_plot(args.loss_plot, loss_history)
     query_embeddings_all = embed_images(model, inference_image_dataset, encoder="query")
     target_embeddings_all = embed_images(model, inference_image_dataset, encoder="target")
 
