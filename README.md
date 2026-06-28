@@ -1,15 +1,15 @@
-# Brain MRI Cross-Modal Retrieval Challenge
+# Соревнование по кросс-модальному ретривалу МРТ головного мозга
 
-Your task is to build a cross-modal medical image retrieval system. For each query brain MRI volume, rank all candidate target MRI volumes from the matching gallery so that the true same-subject target appears as high as possible.
+Ваша задача — построить систему кросс-модального медицинского ретривала изображений. Для каждого запросного volume МРТ головного мозга нужно ранжировать все кандидатные target-volume МРТ из соответствующей gallery так, чтобы истинный target того же субъекта оказался как можно выше.
 
-## Kaggle Challenge
+## Соревнование на Kaggle
 
 https://www.kaggle.com/t/b33ec3e76c3d4e16a6b56852470b3ebf
 
-## Local Environment
+## Локальное окружение
 
-For the classical retrieval pipeline, this repo can be bootstrapped fully offline
-from the cached `uv` packages already stored in the repository:
+Для классического пайплайна ретривала этот репозиторий можно развернуть полностью офлайн
+из закэшированных пакетов `uv`, уже хранящихся в репозитории:
 
 ```bash
 ./setup_local_env_offline.sh
@@ -17,15 +17,15 @@ source .venv/bin/activate
 python -c "import numpy, scipy, sklearn, nibabel; print('env ok')"
 ```
 
-This offline environment is enough for:
+Этого офлайн-окружения достаточно для:
 
 - `classical_retrieval.py`
-- cached vector analysis
-- submission validation
+- анализа закэшированных векторов
+- валидации submission
 
-It is not enough for BrainIAC training or embedding extraction, because the local
-cache does not currently include `torch` or `monai`. For a full BrainIAC-capable
-environment with internet access, install those online into the same `.venv`:
+Его недостаточно для обучения BrainIAC или извлечения эмбеддингов, потому что локальный
+кэш сейчас не содержит `torch` и `monai`. Для полноценного окружения с поддержкой BrainIAC
+и доступом в интернет установите их онлайн в тот же `.venv`:
 
 ```bash
 source .venv/bin/activate
@@ -33,16 +33,16 @@ pip install torch monai==1.3.2 nibabel numpy scipy scikit-learn
 ```
 
 
-## Modalities
+## Модальности
 
 - Query: T1 post-contrast MRI
 - Target: T2 MRI
 
-All images are 3D NIfTI `.nii.gz` volumes converted to RAS orientation.
+Все изображения — это 3D-volume NIfTI `.nii.gz`, приведённые к ориентации RAS.
 
-## Data Layout
+## Структура данных
 
-The data is split into three independent datasets:
+Данные разбиты на три независимых датасета:
 
 ```text
 dataset1/
@@ -77,84 +77,84 @@ dataset3/
 sample_submission.csv
 ```
 
-`dataset1` includes labelled training pairs. `dataset2` and `dataset3` have no labelled training pairs and are intended to evaluate generalization.
+`dataset1` содержит размеченные обучающие пары. У `dataset2` и `dataset3` нет размеченных обучающих пар — они предназначены для оценки обобщающей способности.
 
-## Dataset Descriptions
+## Описание датасетов
 
 ### Dataset 1
 
-`dataset1` contains preoperative MRI pairs only. It provides the labelled training set for the challenge: each row in `dataset1/train_pairs.csv` gives a matching T1 post-contrast query image and T2 target image from the same subject.
+`dataset1` содержит только предоперационные пары МРТ. Это размеченный обучающий набор для соревнования: каждая строка в `dataset1/train_pairs.csv` задаёт соответствующую друг другу запросную T1 post-contrast и target-изображение T2 одного и того же субъекта.
 
-All `dataset1` pairs, including training, validation, and test pairs, are registered to a common image grid. You may use that fact when training on the labelled pairs and when developing methods on this dataset.
+Все пары `dataset1`, включая обучающие, валидационные и тестовые, зарегистрированы на общей координатной сетке изображения. Вы можете использовать этот факт при обучении на размеченных парах и при разработке методов на этом датасете.
 
-`dataset1` validation and test data are provided as query/gallery retrieval pools. The correct matches are hidden and are used for leaderboard scoring.
+Валидационные и тестовые данные `dataset1` предоставляются в виде query/gallery-пулов ретривала. Правильные соответствия скрыты и используются для подсчёта очков на лидерборде.
 
 ### Dataset 2
 
-`dataset2` contains preoperative MRI pairs from the same source setting as `dataset1`, but the validation and test images have random rigid rotation/translation and non-linear deformations applied. Query and target images in a correct pair are deformed independently, so they no longer share one common geometry.
+`dataset2` содержит предоперационные пары МРТ из того же источника, что и `dataset1`, но к валидационным и тестовым изображениям применены случайный жёсткий поворот/сдвиг и нелинейные деформации. Запросное и target-изображение в правильной паре деформированы независимо, поэтому они больше не разделяют единую геометрию.
 
-No labelled training pairs are provided for `dataset2`. It is intended to test whether a method can generalize from the registered development data to a setting with synthetic geometric variation.
+Размеченных обучающих пар для `dataset2` не предоставляется. Он предназначен для проверки того, способен ли метод обобщиться с зарегистрированных данных разработки на условия синтетической геометрической вариативности.
 
-The example below shows one correct query-target pair from `dataset2` using one representative slice from each volume:
+Пример ниже показывает одну правильную пару query-target из `dataset2` на одном репрезентативном срезе из каждого volume:
 
-![Dataset 2 correct pair example](assets/dataset2_example_pair.png)
+![Пример правильной пары Dataset 2](assets/dataset2_example_pair.png)
 
 ### Dataset 3
 
-`dataset3` contains preoperative-to-intraoperative MRI pairs. No labelled training pairs are provided for `dataset3`; it is intended to evaluate generalization to a more structurally different setting.
+`dataset3` содержит пары МРТ предоперационное-к-интраоперационному. Размеченных обучающих пар для `dataset3` не предоставляется; он предназначен для оценки обобщения на структурно более отличающиеся условия.
 
-In `dataset3`, each intraoperative target image has been resampled into the same geometric space as its matching preoperative query image using the source image physical coordinates. This does not mean the images are registered in the strict sense. The candidates are intraoperative images, so the anatomy can be structurally different from the preoperative query: tissue may have shifted, parts of the brain may be missing, and local structures can look different because of the intervention. The goal is still to retrieve the matching subject, but exact local alignment is not guaranteed.
+В `dataset3` каждое интраоперационное target-изображение пересэмплировано в то же геометрическое пространство, что и соответствующее ему предоперационное запросное изображение, с использованием физических координат исходного изображения. Это не означает, что изображения зарегистрированы в строгом смысле. Кандидаты — это интраоперационные изображения, поэтому анатомия может структурно отличаться от предоперационного запроса: ткани могли сместиться, части мозга могут отсутствовать, а локальные структуры могут выглядеть иначе из-за вмешательства. Цель по-прежнему состоит в том, чтобы найти соответствующего субъекта, но точное локальное выравнивание не гарантируется.
 
-The example below shows one correct query-target pair from `dataset3` using one representative slice from each volume:
+Пример ниже показывает одну правильную пару query-target из `dataset3` на одном репрезентативном срезе из каждого volume:
 
-![Dataset 3 correct pair example](assets/dataset3_example_pair.png)
+![Пример правильной пары Dataset 3](assets/dataset3_example_pair.png)
 
-### Preprocessing Notes
+### Замечания по препроцессингу
 
-All images have been converted to NIfTI, RAS orientation, and 1.0 x 1.0 x 1.0 mm voxel spacing. No intensity normalization, histogram matching, skull stripping, deformable registration, or cropping has been applied as part of this release.
+Все изображения приведены к NIfTI, ориентации RAS и шагу вокселей 1.0 x 1.0 x 1.0 мм. В рамках этого релиза не применялись нормализация интенсивностей, сопоставление гистограмм, удаление черепа (skull stripping), деформируемая регистрация или обрезка (cropping).
 
-Your code should not assume one fixed image shape for the whole challenge. Matching query and target volumes may also differ in shape, especially in `dataset2` and `dataset3`.
+Ваш код не должен предполагать одну фиксированную форму изображения для всего соревнования. Соответствующие друг другу запросные и target-volume также могут отличаться по форме, особенно в `dataset2` и `dataset3`.
 
-## Files
+## Файлы
 
-### Training
+### Обучение
 
-`dataset1/train_pairs.csv` contains labelled query-target pairs:
+`dataset1/train_pairs.csv` содержит размеченные пары query-target:
 
 ```text
 pair_id,query_id,target_id,query_image,target_image,query_modality,target_modality,dataset
 ```
 
-### Query Manifests
+### Манифесты запросов (Query Manifests)
 
-Validation and test query files contain:
+Валидационные и тестовые query-файлы содержат:
 
 ```text
 query_id,query_image,query_modality,dataset
 ```
 
-### Gallery Manifests
+### Манифесты gallery (Gallery Manifests)
 
-Validation and test gallery files contain:
+Валидационные и тестовые gallery-файлы содержат:
 
 ```text
 target_id,target_image,target_modality,dataset
 ```
 
-## Retrieval Pools
+## Пулы ретривала
 
-The three datasets are independent retrieval pools. Always rank a query only against the gallery from the same dataset and same split:
+Три датасета — это независимые пулы ретривала. Всегда ранжируйте запрос только относительно gallery из того же датасета и того же split:
 
-- `dataset1/val_queries.csv` uses `dataset1/val_gallery.csv`
-- `dataset1/test_queries.csv` uses `dataset1/test_gallery.csv`
-- `dataset2/val_queries.csv` uses `dataset2/val_gallery.csv`
-- `dataset2/test_queries.csv` uses `dataset2/test_gallery.csv`
-- `dataset3/val_queries.csv` uses `dataset3/val_gallery.csv`
-- `dataset3/test_queries.csv` uses `dataset3/test_gallery.csv`
+- `dataset1/val_queries.csv` использует `dataset1/val_gallery.csv`
+- `dataset1/test_queries.csv` использует `dataset1/test_gallery.csv`
+- `dataset2/val_queries.csv` использует `dataset2/val_gallery.csv`
+- `dataset2/test_queries.csv` использует `dataset2/test_gallery.csv`
+- `dataset3/val_queries.csv` использует `dataset3/val_gallery.csv`
+- `dataset3/test_queries.csv` использует `dataset3/test_gallery.csv`
 
-Do not rank queries from one dataset against another dataset's gallery, and do not mix validation and test galleries.
+Не ранжируйте запросы одного датасета относительно gallery другого датасета и не смешивайте валидационные и тестовые gallery.
 
-## Counts
+## Размеры
 
 ```text
 dataset1:
@@ -171,46 +171,46 @@ dataset3:
   test queries/gallery: 77 / 77
 ```
 
-## Evaluation
+## Оценка
 
-The score is mean reciprocal rank (MRR), computed separately for `dataset1`, `dataset2`, and `dataset3`, then averaged:
+Очки — это mean reciprocal rank (MRR), вычисляемый отдельно для `dataset1`, `dataset2` и `dataset3`, а затем усредняемый:
 
 ```text
 score = (dataset1_MRR + dataset2_MRR + dataset3_MRR) / 3
 ```
 
-For each query, reciprocal rank is `1 / rank` of the true matching target in the submitted ranking. If the true target is absent, or if the query row is omitted from the submission, that query receives reciprocal rank `0`.
+Для каждого запроса reciprocal rank равен `1 / rank` истинного соответствующего target в отправленном ранжировании. Если истинный target отсутствует или строка запроса опущена в submission, этот запрос получает reciprocal rank `0`.
 
-Kaggle uses the hidden solution file to decide which rows are public and private:
+Kaggle использует скрытый файл решения, чтобы определить, какие строки публичные, а какие приватные:
 
-- validation query rows are scored on the public leaderboard during the competition
-- test query rows are scored on the private leaderboard for final ranking
+- строки валидационных запросов оцениваются на публичном лидерборде во время соревнования
+- строки тестовых запросов оцениваются на приватном лидерборде для финального ранжирования
 
-Participants do not include a split column. Kaggle aligns rows by `query_id`, then scores the public and private subsets internally.
+Участники не включают столбец split. Kaggle сопоставляет строки по `query_id`, а затем внутренне оценивает публичное и приватное подмножества.
 
-## Submission Format
+## Формат submission
 
-**Attention: Kaggle comes with a limitation of 100 submissions per team per day!**
+**Внимание: на Kaggle действует ограничение в 100 submission на команду в день!**
 
-Kaggle expects one submission file per attempt. Submit one combined CSV with the same columns as the root-level `sample_submission.csv`; do not submit separate files for individual datasets.
+Kaggle ожидает один файл submission на попытку. Отправляйте один объединённый CSV с теми же столбцами, что и в корневом `sample_submission.csv`; не отправляйте отдельные файлы для отдельных датасетов.
 
 ```text
 query_id,target_id_ranking
 q_...,g_... g_... g_... ...
 ```
 
-All `query_id` and `target_id` values are globally unique across all three datasets, so the combined file can include rows from `dataset1`, `dataset2`, and `dataset3` without an extra dataset column.
+Все значения `query_id` и `target_id` глобально уникальны для всех трёх датасетов, поэтому объединённый файл может включать строки из `dataset1`, `dataset2` и `dataset3` без дополнительного столбца датасета.
 
-Each submitted row must contain a full ranking of every target ID from that query's corresponding same-dataset, same-split gallery. Rankings are space-separated and ordered from most likely match to least likely match.
+Каждая отправленная строка должна содержать полное ранжирование всех target ID из соответствующей запросу gallery того же датасета и того же split. Ранжирования разделяются пробелами и упорядочены от наиболее вероятного соответствия к наименее вероятному.
 
-For example, a query from `dataset2/test_queries.csv` must rank all target IDs from `dataset2/test_gallery.csv`, and no target IDs from any validation gallery or from another dataset:
+Например, запрос из `dataset2/test_queries.csv` должен ранжировать все target ID из `dataset2/test_gallery.csv` и ни одного target ID из какой-либо валидационной gallery или из другого датасета:
 
 ```text
 query_id,target_id_ranking
 q_example_dataset2_test,g_first_choice g_second_choice g_third_choice ...
 ```
 
-Expected ranking lengths:
+Ожидаемые длины ранжирований:
 
 ```text
 dataset1 validation rows: 40 target IDs
@@ -221,24 +221,24 @@ dataset3 validation rows: 20 target IDs
 dataset3 test rows: 77 target IDs
 ```
 
-The complete submission template contains one row for every validation and test query from all three datasets, for `377` rows total. Partial submissions are allowed:
+Полный шаблон submission содержит по одной строке на каждый валидационный и тестовый запрос из всех трёх датасетов — всего `377` строк. Частичные submission разрешены:
 
-- For validation-only experiments, submit rows from `val_queries.csv` files.
-- For full challenge submissions, submit both validation and test query rows in one file.
-- To focus on one dataset first, submit only that dataset's rows and omit the other datasets. The omitted datasets receive zero credit. Multiplying the displayed score by `3` gives the MRR for the submitted dataset.
+- Для экспериментов только на валидации отправляйте строки из файлов `val_queries.csv`.
+- Для полных submission соревнования отправляйте строки и валидационных, и тестовых запросов в одном файле.
+- Чтобы сначала сосредоточиться на одном датасете, отправляйте только строки этого датасета и опускайте остальные. Опущенные датасеты получают ноль очков. Умножение отображаемого счёта на `3` даёт MRR для отправленного датасета.
 
-## Baseline Code
+## Код baseline
 
-We provide a small MONAI + PyTorch baseline to help you get started with the challenge data format, preprocessing, training loop, and submission generation.
+Мы предоставляем небольшой baseline на MONAI + PyTorch, чтобы помочь вам начать работу с форматом данных соревнования, препроцессингом, циклом обучения и генерацией submission.
 
-The baseline is intentionally simple. It is not meant to be a strong solution. Its purpose is to demonstrate:
+Baseline намеренно прост. Он не задуман как сильное решение. Его цель — продемонстрировать:
 
-* how to load 3D NIfTI volumes with MONAI
-* how to apply basic medical image preprocessing and create a quick-to-load cache
-* how to write a valid Kaggle submission file
-* the task complexity of the different datasets
+* как загружать 3D-volume NIfTI с помощью MONAI
+* как применять базовый препроцессинг медицинских изображений и создавать быстрозагружаемый кэш
+* как записать валидный файл submission для Kaggle
+* сложность задачи на разных датасетах
 
-Install and run it with uv:
+Установите и запустите его с помощью uv:
 
 ```sh
 DATA_ROOT=/path/to/kaggle_dataset
@@ -260,22 +260,22 @@ uv run slice_clip_baseline.py \
   --out slice_clip_submission.csv
 ```
 
-This writes a combined submission file:
+Это записывает объединённый файл submission:
 
 `slice_clip_submission.csv`
 
-The file can be submitted directly to Kaggle.
+Файл можно отправить напрямую на Kaggle.
 
-## Classical Cosine Embeddings
+## Классические косинусные эмбеддинги
 
-For a stronger non-neural baseline, `classical_retrieval.py` can:
+Для более сильного нейросетевого baseline `classical_retrieval.py` может:
 
-* extract hand-crafted 3D MRI features into cached vectors
-* build final query/gallery embeddings
-* rank gallery targets with cosine similarity
-* write a ready-to-submit Kaggle CSV
+* извлекать hand-crafted 3D-признаки МРТ в закэшированные векторы
+* строить финальные query/gallery-эмбеддинги
+* ранжировать gallery-target по косинусной близости
+* записывать готовый к отправке CSV для Kaggle
 
-Run from the repo root:
+Запуск из корня репозитория:
 
 ```sh
 uv run classical_retrieval.py embed-submit \
@@ -284,13 +284,13 @@ uv run classical_retrieval.py embed-submit \
   --out submissions/cosine_vectors_fusion_default_plus_pca.csv
 ```
 
-This writes one `.npz` file with `query_ids`, `target_ids`, `query_vectors`, and
-`target_vectors` for each dataset/split pool, plus a combined submission CSV.
+Это записывает один файл `.npz` с `query_ids`, `target_ids`, `query_vectors` и
+`target_vectors` для каждого пула датасет/split, плюс объединённый CSV submission.
 
-## BrainIAC Cosine Embeddings
+## Косинусные эмбеддинги BrainIAC
 
-To generate foundation-model embeddings with the pretrained BrainIAC backbone
-and rank gallery targets by cosine similarity:
+Чтобы сгенерировать эмбеддинги фундаментальной модели с предобученным backbone BrainIAC
+и ранжировать gallery-target по косинусной близости:
 
 ```sh
 uv run brainiac_cosine_retrieval.py \
@@ -300,11 +300,11 @@ uv run brainiac_cosine_retrieval.py \
   --out submissions/brainiac_cosine_submission.csv
 ```
 
-This writes one `.npz` file per dataset/split pool with `query_vectors` and
-`target_vectors`, plus a combined Kaggle submission CSV.
+Это записывает один файл `.npz` на каждый пул датасет/split с `query_vectors` и
+`target_vectors`, плюс объединённый CSV submission для Kaggle.
 
-You can also submit only one dataset to get intuition for the difficulty of each retrieval pool.
-For example, to train on dataset1 and submit only dataset1 validation and test rows:
+Вы также можете отправить только один датасет, чтобы получить интуицию о сложности каждого пула ретривала.
+Например, чтобы обучиться на dataset1 и отправить только валидационные и тестовые строки dataset1:
 
 ```sh
 DATA_ROOT=/path/to/kaggle_dataset

@@ -1,20 +1,20 @@
-# Kaggle Feedback Plan
+# План работы с обратной связью Kaggle
 
-Current public score: `0.55714`.
+Текущий публичный счёт: `0.55714`.
 
-The fastest way to improve is to isolate dataset-specific public MRR. Kaggle
-averages three dataset MRRs:
+Самый быстрый способ улучшиться — изолировать публичный MRR по конкретным датасетам.
+Kaggle усредняет три MRR по датасетам:
 
 ```text
 score = (dataset1_MRR + dataset2_MRR + dataset3_MRR) / 3
 ```
 
-If a submission contains only one dataset, multiply Kaggle's displayed score by
-`3` to estimate that dataset's public MRR.
+Если submission содержит только один датасет, умножьте отображаемый счёт Kaggle на
+`3`, чтобы оценить публичный MRR этого датасета.
 
-## Submit These Diagnostics First
+## Отправьте сначала эти диагностики
 
-Dataset 2, deformation-heavy:
+Dataset 2, насыщенный деформациями:
 
 ```text
 submissions/d2_fusion_dataset2.csv
@@ -23,7 +23,7 @@ submissions/d2_mask_crop32.csv
 submissions/d2_pca_abs_mask24.csv
 ```
 
-Dataset 3, post-surgery:
+Dataset 3, послеоперационный:
 
 ```text
 submissions/d3_fusion_dataset3.csv
@@ -31,12 +31,12 @@ submissions/d3_fusion_shape.csv
 submissions/d3_pca_ridge_c128_a100.csv
 ```
 
-Record each displayed Kaggle score and multiply by `3`.
+Запишите каждый отображаемый счёт Kaggle и умножьте на `3`.
 
-## Submit These Full Candidates
+## Отправьте этих полных кандидатов
 
-Use these after diagnostics, or immediately if submission budget is not a
-concern:
+Используйте их после диагностик или сразу, если бюджет submission не имеет
+значения:
 
 ```text
 submissions/mix_d1pca_d2dataset2_d3dataset3.csv
@@ -45,19 +45,19 @@ submissions/mix_d1pca_d2pcaabsmask_d3dataset3.csv
 submissions/mix_d1pca_d2mask_d3shape.csv
 ```
 
-The best source-domain method remains:
+Лучший метод исходного домена остаётся:
 
 ```text
 submissions/all_pca_ridge_c128_a100.csv
 ```
 
-## Interpretation
+## Интерпретация
 
-- If `d2_pca_abs_mask24` beats the others, dataset2 is mostly failing because
-  random rotation/deformation breaks grid-aligned matching.
-- If `d2_fusion_grid` wins, dataset2 still benefits from aligned edges/masks
-  despite deformation.
-- If `d3_pca_ridge_c128_a100` wins, surgery cases still retain enough
-  source-domain appearance signal.
-- If `d3_fusion_dataset3` or `d3_fusion_shape` wins, surgery breaks local
-  appearance and shape/edge fusion is safer.
+- Если `d2_pca_abs_mask24` обходит остальные, dataset2 проваливается в основном потому,
+  что случайный поворот/деформация ломает выровненное по сетке сопоставление.
+- Если выигрывает `d2_fusion_grid`, dataset2 всё ещё выигрывает от выровненных
+  рёбер/масок, несмотря на деформацию.
+- Если выигрывает `d3_pca_ridge_c128_a100`, операционные случаи всё ещё сохраняют
+  достаточно сигнала внешнего вида исходного домена.
+- Если выигрывает `d3_fusion_dataset3` или `d3_fusion_shape`, операция ломает локальный
+  внешний вид, и fusion по форме/рёбрам безопаснее.

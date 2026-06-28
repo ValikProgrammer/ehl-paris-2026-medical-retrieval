@@ -17,6 +17,7 @@ import json
 import math
 import os
 import random
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -34,6 +35,7 @@ DEFAULT_CHECKPOINT = Path("checkpoints/BrainIAC.ckpt")
 DEFAULT_RUNS_ROOT = Path("runs")
 IMAGE_SIZE = (96, 96, 96)
 SEED = 20260627
+PAIR_AUG_SUFFIX_RE = re.compile(r"_aug\d+$")
 
 
 @dataclass(frozen=True)
@@ -119,6 +121,15 @@ def pair_key(row: dict[str, str]) -> str:
     return row.get("pair_id") or f"{row['query_id']}|{row['target_id']}"
 
 
+def canonical_pair_key(row: dict[str, str]) -> str:
+    """Group generated augmentation rows with their source pair."""
+    key = pair_key(row)
+    key = PAIR_AUG_SUFFIX_RE.sub("", key)
+    if "|" in key:
+        return "|".join(PAIR_AUG_SUFFIX_RE.sub("", part) for part in key.split("|"))
+    return key
+
+
 def stable_split(
     pairs: list[dict[str, str]],
     holdout_frac: float,
@@ -133,6 +144,27 @@ def stable_split(
     holdout = [row for _, row in scored[:holdout_n]]
     train = [row for _, row in scored[holdout_n:]]
     return train, holdout
+
+
+def split_augmented_training_rows(
+    train_rows: list[dict[str, str]],
+    holdout_rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Keep augmented copies of holdout source pairs out of adapter training."""
+    holdout_keys = {canonical_pair_key(row) for row in holdout_rows}
+    return [row for row in train_rows if canonical_pair_key(row) not in holdout_keys]
+
+
+def unique_manifest_rows(rows: list[dict[str, str]], id_key: str) -> list[dict[str, str]]:
+    seen: set[str] = set()
+    unique_rows: list[dict[str, str]] = []
+    for row in rows:
+        image_id = row[id_key]
+        if image_id in seen:
+            continue
+        seen.add(image_id)
+        unique_rows.append(row)
+    return unique_rows
 
 
 def normalize_nonzero(volume: np.ndarray) -> np.ndarray:
@@ -185,9 +217,7 @@ class ViTBackboneNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.backbone(x)
-        token_embeddings = features[0]
-        pooled = token_embeddings.mean(dim=1)
-        return F.normalize(pooled, dim=1)
+        return F.normalize(features[0][:, 0], dim=1)
 
 
 class ManifestImageDataset(Dataset):
@@ -230,6 +260,18 @@ def embed_manifest(
     return ids, np.concatenate(outputs, axis=0)
 
 
+class PairEmbeddingDataset(Dataset):
+    def __init__(self, query_vectors: np.ndarray, target_vectors: np.ndarray) -> None:
+        self.query_vectors = torch.from_numpy(query_vectors.astype(np.float32))
+        self.target_vectors = torch.from_numpy(target_vectors.astype(np.float32))
+
+    def __len__(self) -> int:
+        return len(self.query_vectors)
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.query_vectors[index], self.target_vectors[index]
+
+
 class AdapterModel(nn.Module):
     def __init__(self, input_dim: int = 768, hidden_dim: int = 768, output_dim: int = 256, dropout: float = 0.1) -> None:
         super().__init__()
@@ -260,14 +302,6 @@ class AdapterModel(nn.Module):
 
     def forward(self, query: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         return self.scale() * self.encode_query(query) @ self.encode_target(target).T
-
-
-def symmetric_contrastive_loss(logits: torch.Tensor, label_smoothing: float) -> torch.Tensor:
-    labels = torch.arange(logits.shape[0], device=logits.device)
-    return (
-        F.cross_entropy(logits, labels, label_smoothing=label_smoothing)
-        + F.cross_entropy(logits.T, labels, label_smoothing=label_smoothing)
-    ) / 2.0
 
 
 def metrics_from_scores(
@@ -354,47 +388,38 @@ def train_adapter(
     all_target_vectors: np.ndarray,
     device: torch.device,
     epochs: int,
-    early_stop_patience: int,
     batch_size: int,
     learning_rate: float,
     weight_decay: float,
-    label_smoothing: float,
-    early_stop_monitor: str,
-) -> tuple[
-    AdapterModel,
-    list[dict[str, float]],
-    dict[str, float],
-    dict[str, float],
-    dict[str, float | int | bool | str],
-]:
+) -> tuple[AdapterModel, list[dict[str, float]], dict[str, float], dict[str, float]]:
+    dataset = PairEmbeddingDataset(train_query_vectors, train_target_vectors)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    train_query_tensor = torch.from_numpy(train_query_vectors.astype(np.float32)).to(device)
-    train_target_tensor = torch.from_numpy(train_target_vectors.astype(np.float32)).to(device)
+    loss_fn = nn.CrossEntropyLoss()
 
     best_state = None
     best_metrics = None
     best_all_gallery_metrics = None
-    best_key = -math.inf
-    best_metric_epoch = 0
-    best_loss = math.inf
-    best_loss_epoch = 0
-    epochs_since_best_loss = 0
-    best_monitor_value = -math.inf if early_stop_monitor != "loss" else math.inf
-    best_monitor_epoch = 0
-    epochs_since_best_monitor = 0
-    epochs_since_best_metric = 0
-    stopped_early = False
+    best_key = -1.0
     history: list[dict[str, float]] = []
 
     for epoch in range(1, epochs + 1):
         model.train()
-        optimizer.zero_grad(set_to_none=True)
-        logits = model(train_query_tensor, train_target_tensor)
-        loss = symmetric_contrastive_loss(logits, label_smoothing=label_smoothing)
-        loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
+        total_loss = 0.0
+        total_seen = 0
+        for query_batch, target_batch in loader:
+            query_batch = query_batch.to(device)
+            target_batch = target_batch.to(device)
+            labels = torch.arange(len(query_batch), device=device)
+            optimizer.zero_grad(set_to_none=True)
+            logits = model(query_batch, target_batch)
+            loss = (loss_fn(logits, labels) + loss_fn(logits.T, labels)) / 2.0
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            total_loss += float(loss.detach().cpu()) * len(query_batch)
+            total_seen += len(query_batch)
 
         holdout_metrics = evaluate_pair_metrics(
             model,
@@ -416,16 +441,14 @@ def train_adapter(
             device,
             batch_size,
         )
-        key = 1000.0 * all_gallery_metrics["mrr"] + holdout_metrics["mrr"]
         row = {
             "epoch": float(epoch),
-            "loss": float(loss.detach().cpu()),
+            "loss": total_loss / max(total_seen, 1),
             "temperature": float(model.scale().detach().cpu()),
             "holdout_mrr": holdout_metrics["mrr"],
             "holdout_r1": holdout_metrics["recall_at_1"],
             "all_gallery_mrr": all_gallery_metrics["mrr"],
             "all_gallery_r1": all_gallery_metrics["recall_at_1"],
-            "selection_key": key,
         }
         history.append(row)
         print(
@@ -434,76 +457,25 @@ def train_adapter(
             flush=True,
         )
 
-        if row["loss"] < best_loss:
-            best_loss = row["loss"]
-            best_loss_epoch = epoch
-            epochs_since_best_loss = 0
-        else:
-            epochs_since_best_loss += 1
-
-        monitor_value = row[early_stop_monitor]
-        if early_stop_monitor == "loss":
-            improved_monitor = monitor_value < best_monitor_value
-        else:
-            improved_monitor = monitor_value > best_monitor_value
-        if improved_monitor:
-            best_monitor_value = monitor_value
-            best_monitor_epoch = epoch
-            epochs_since_best_monitor = 0
-        else:
-            epochs_since_best_monitor += 1
-
+        key = 1000.0 * all_gallery_metrics["mrr"] + holdout_metrics["mrr"]
         if key > best_key:
             best_key = key
-            best_metric_epoch = epoch
-            epochs_since_best_metric = 0
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
             best_metrics = holdout_metrics
             best_all_gallery_metrics = all_gallery_metrics
-        else:
-            epochs_since_best_metric += 1
-
-        if early_stop_patience > 0 and epochs_since_best_monitor >= early_stop_patience:
-            stopped_early = True
-            print(
-                f"early stopping at epoch {epoch:03d}: "
-                f"best_{early_stop_monitor}={best_monitor_value:.5f} at epoch {best_monitor_epoch:03d}, "
-                f"no {early_stop_monitor} improvement for {epochs_since_best_monitor} epochs",
-                flush=True,
-            )
-            break
 
     if best_state is None or best_metrics is None or best_all_gallery_metrics is None:
         raise RuntimeError("Training finished without a best checkpoint")
 
     model.load_state_dict(best_state)
-    training_summary: dict[str, float | int | bool | str] = {
-        "epochs_requested": epochs,
-        "epochs_completed": len(history),
-        "stopped_early": stopped_early,
-        "early_stop_patience": early_stop_patience,
-        "early_stop_monitor": early_stop_monitor,
-        "best_monitor_value": best_monitor_value,
-        "best_monitor_epoch": best_monitor_epoch,
-        "best_metric_epoch": best_metric_epoch,
-        "best_selection_key": best_key,
-        "best_holdout_mrr": best_metrics["mrr"],
-        "best_all_gallery_mrr": best_all_gallery_metrics["mrr"],
-        "best_loss": best_loss,
-        "best_loss_epoch": best_loss_epoch,
-        "epochs_since_best_loss": epochs_since_best_loss,
-        "epochs_since_best_monitor": epochs_since_best_monitor,
-        "epochs_since_best_metric": epochs_since_best_metric,
-        "label_smoothing": label_smoothing,
-        "train_pairs": len(train_query_vectors),
-        "train_loss_mode": "full_batch_symmetric_contrastive",
-    }
-    return model, history, best_metrics, best_all_gallery_metrics, training_summary
+    return model, history, best_metrics, best_all_gallery_metrics
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
+    parser.add_argument("--train-pair-csv", type=Path, default=None, help="Training pair CSV. Can be an augmented CSV.")
+    parser.add_argument("--holdout-pair-csv", type=Path, default=None, help="Original labelled pairs used for leakage-free holdout.")
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--run-dir", type=Path, default=DEFAULT_RUNS_ROOT / "brainiac_adapter")
     parser.add_argument("--holdout-frac", type=float, default=0.20)
@@ -512,15 +484,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--embed-batch-size", type=int, default=8)
     parser.add_argument("--epochs", type=int, default=120)
-    parser.add_argument("--early-stop-patience", type=int, default=15)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
-    parser.add_argument("--label-smoothing", type=float, default=0.05)
-    parser.add_argument(
-        "--early-stop-monitor",
-        choices=("loss", "holdout_mrr", "all_gallery_mrr", "selection_key"),
-        default="loss",
-    )
     parser.add_argument("--hidden-dim", type=int, default=768)
     parser.add_argument("--output-dim", type=int, default=256)
     parser.add_argument("--dropout", type=float, default=0.1)
@@ -533,25 +498,29 @@ def main() -> None:
     args = parse_args()
     seed_everything(args.seed)
     os.environ.setdefault("OMP_NUM_THREADS", "1")
-    script_path = Path(__file__).resolve()
 
     data_root = args.data_root.resolve()
     checkpoint = args.checkpoint.resolve()
     run_dir = args.run_dir.resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
-    weights_path = run_dir / "adapter.pt"
     device = get_device(args.device)
 
-    print(f"training_script={script_path}", flush=True)
-    print(f"run_dir={run_dir}", flush=True)
-    print(f"weights_path={weights_path}", flush=True)
-
-    train_pairs = read_csv(data_root / "dataset1" / "train_pairs.csv")
-    train_split, holdout_split = stable_split(train_pairs, args.holdout_frac, args.split_seed)
+    train_pair_csv = args.train_pair_csv or data_root / "dataset1" / "train_pairs.csv"
+    holdout_pair_csv = args.holdout_pair_csv or data_root / "dataset1" / "train_pairs.csv"
+    train_pairs = read_csv(train_pair_csv)
+    holdout_source_pairs = read_csv(holdout_pair_csv)
+    source_train_split, holdout_split = stable_split(holdout_source_pairs, args.holdout_frac, args.split_seed)
+    train_split = split_augmented_training_rows(train_pairs, holdout_split)
+    if not train_split:
+        raise ValueError("No training rows remain after excluding holdout source pairs")
     split_payload = {
         "seed": args.seed,
         "split_seed": args.split_seed,
         "holdout_frac": args.holdout_frac,
+        "train_pair_csv": train_pair_csv,
+        "holdout_pair_csv": holdout_pair_csv,
+        "source_train_pairs": len(source_train_split),
+        "source_holdout_pairs": len(holdout_split),
         "train_pairs": len(train_split),
         "holdout_pairs": len(holdout_split),
         "train_pair_ids": [pair_key(row) for row in train_split],
@@ -561,8 +530,15 @@ def main() -> None:
 
     backbone = ViTBackboneNet(checkpoint).to(device)
 
-    all_train_queries = [{"query_id": row["query_id"], "query_image": row["query_image"]} for row in train_pairs]
-    all_train_targets = [{"target_id": row["target_id"], "target_image": row["target_image"]} for row in train_pairs]
+    rows_to_embed = train_split + holdout_split + holdout_source_pairs
+    all_train_queries = unique_manifest_rows(
+        [{"query_id": row["query_id"], "query_image": row["query_image"]} for row in rows_to_embed],
+        "query_id",
+    )
+    all_train_targets = unique_manifest_rows(
+        [{"target_id": row["target_id"], "target_image": row["target_image"]} for row in rows_to_embed],
+        "target_id",
+    )
     train_query_ids, train_query_vectors = embed_manifest(backbone, all_train_queries, data_root, "query_id", "query_image", args.embed_batch_size, args.num_workers, device)
     train_target_ids, train_target_vectors = embed_manifest(backbone, all_train_targets, data_root, "target_id", "target_image", args.embed_batch_size, args.num_workers, device)
     query_map = {image_id: vector for image_id, vector in zip(train_query_ids, train_query_vectors)}
@@ -575,7 +551,8 @@ def main() -> None:
     holdout_query_matrix = np.stack([query_map[query_id] for query_id in holdout_query_ids]).astype(np.float32)
     holdout_target_matrix = np.stack([target_map[target_id] for target_id in holdout_target_ids]).astype(np.float32)
     holdout_truth = {row["query_id"]: row["target_id"] for row in holdout_split}
-    all_gallery_target_ids = list(train_target_ids)
+    original_target_ids = [row["target_id"] for row in holdout_source_pairs]
+    all_gallery_target_ids = [target_id for target_id in original_target_ids if target_id in target_map]
     all_gallery_target_matrix = np.stack([target_map[target_id] for target_id in all_gallery_target_ids]).astype(np.float32)
 
     raw_holdout_metrics = evaluate_pair_metrics(
@@ -600,7 +577,7 @@ def main() -> None:
     )
 
     adapter = AdapterModel(input_dim=train_query_matrix.shape[1], hidden_dim=args.hidden_dim, output_dim=args.output_dim, dropout=args.dropout)
-    adapter, history, best_holdout_metrics, best_all_gallery_metrics, training_summary = train_adapter(
+    adapter, history, best_holdout_metrics, best_all_gallery_metrics = train_adapter(
         adapter,
         train_query_matrix,
         train_target_matrix,
@@ -613,12 +590,9 @@ def main() -> None:
         all_gallery_target_matrix,
         device,
         args.epochs,
-        args.early_stop_patience,
         args.batch_size,
         args.learning_rate,
         args.weight_decay,
-        args.label_smoothing,
-        args.early_stop_monitor,
     )
 
     torch.save(
@@ -629,9 +603,8 @@ def main() -> None:
             "raw_all_gallery_metrics": raw_all_gallery_metrics,
             "best_holdout_metrics": best_holdout_metrics,
             "best_all_gallery_metrics": best_all_gallery_metrics,
-            "training_summary": training_summary,
         },
-        weights_path,
+        run_dir / "adapter.pt",
     )
     write_json(
         run_dir / "metrics.json",
@@ -641,12 +614,9 @@ def main() -> None:
             "best_holdout_metrics": best_holdout_metrics,
             "best_all_gallery_metrics": best_all_gallery_metrics,
             "config": vars(args),
-            "training_summary": training_summary,
-            "history": history,
         },
     )
-    if history:
-        write_csv(run_dir / "history.csv", history, list(history[0].keys()))
+    write_csv(run_dir / "history.csv", history, list(history[0].keys()))
 
     submission_rows: list[dict[str, str]] = []
     for pool in all_prediction_pools(data_root):
@@ -676,14 +646,11 @@ def main() -> None:
     print(
         json.dumps(
             {
-                "training_script": str(script_path),
                 "run_dir": str(run_dir),
-                "weights_path": str(weights_path),
                 "raw_holdout_metrics": raw_holdout_metrics,
                 "raw_all_gallery_metrics": raw_all_gallery_metrics,
                 "best_holdout_metrics": best_holdout_metrics,
                 "best_all_gallery_metrics": best_all_gallery_metrics,
-                "training_summary": training_summary,
             },
             indent=2,
             sort_keys=True,

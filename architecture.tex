@@ -2,6 +2,8 @@
 
 % --- packages (all standard in a basic TeX Live install) ---
 \usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[russian]{babel}
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
@@ -22,8 +24,8 @@
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\R}{\mathbb{R}}
 
-\title{\textbf{Cross-Modal Brain MRI Retrieval}\\[2pt]
-\large A Classical, Registration-Based Pipeline (public score $0.904$)}
+\title{\textbf{Кросс-модальный ретривал МРТ головного мозга}\\[2pt]
+\large Классический пайплайн на основе регистрации (публичный счёт $0.904$)}
 \author{EHL Paris --- Medical Image Retrieval}
 \date{2026-06-27}
 
@@ -31,263 +33,266 @@
 \maketitle
 
 \begin{abstract}
-We describe, from scratch, the retrieval system that reaches a public score of
-$0.90444$ on the \emph{EHL Paris: Medical Image Retrieval} challenge, up from a
-$0.651$ baseline. The task is to match a T1 post-contrast query brain MRI to its
-same-subject T2 target across three datasets with increasing geometric difficulty.
-The final system is fully classical (no deep learning, no augmentation): per-volume
-intensity normalization, an \emph{intramodal template normalization} step that
-removes pose, a PCA + Ridge cross-modal embedding learned on the only labelled
-dataset, cosine scoring, and a one-to-one Hungarian assignment that exploits the
-bijective structure of each retrieval pool. A key methodological contribution is a
-\emph{synthetic-dataset2 validation harness} that lets us rank candidate methods
-offline, without spending the limited Kaggle submission budget.
+Мы описываем с нуля систему ретривала, которая достигает публичного счёта
+$0.90444$ в соревновании \emph{EHL Paris: Medical Image Retrieval}, поднявшись с
+baseline $0.651$. Задача — сопоставить запросную T1 post-contrast МРТ головного
+мозга с её T2-target того же субъекта в трёх датасетах с возрастающей
+геометрической сложностью. Финальная система полностью классическая (без глубокого
+обучения, без аугментации): повоксельная нормализация интенсивностей, шаг
+\emph{intramodal template normalization}, убирающий позу, кросс-модальный эмбеддинг
+PCA + Ridge, выученный на единственном размеченном датасете, косинусный скоринг и
+назначение «один к одному» (Hungarian), эксплуатирующее биективную структуру каждого
+пула ретривала. Ключевой методологический вклад — \emph{валидационный харнесс
+синтетического dataset2}, позволяющий ранжировать кандидатные методы офлайн, не тратя
+ограниченный бюджет submission на Kaggle.
 \end{abstract}
 
 \tableofcontents
 
 % ======================================================================
-\section{Problem statement}
+\section{Постановка задачи}
 
-For each \emph{query} volume (a 3D T1 post-contrast MRI) we must rank all
-\emph{target} volumes (3D T2 MRI) of a gallery so that the true same-subject target
-is ranked as high as possible. All images are NIfTI volumes in RAS orientation at
-$1\,\text{mm}$ isotropic spacing; shapes vary (e.g. $240\times240\times155$).
+Для каждого \emph{запросного} volume (3D T1 post-contrast МРТ) мы должны ранжировать
+все \emph{target}-volume (3D T2 МРТ) gallery так, чтобы истинный target того же
+субъекта был ранжирован как можно выше. Все изображения — это volume NIfTI в
+ориентации RAS с изотропным шагом $1\,\text{мм}$; формы варьируются (например,
+$240\times240\times155$).
 
-The data is split into three independent pools:
+Данные разбиты на три независимых пула:
 \begin{itemize}[nosep]
-  \item \textbf{dataset1}: registered preoperative pairs. The \emph{only} labelled
-        training set ($350$ pairs). Query and target of a pair share a common grid.
-  \item \textbf{dataset2}: same source as dataset1, but each query and target is
-        \emph{independently} warped by a random rigid transform (rotation +
-        translation) \emph{and} a nonlinear (elastic) deformation. No labels.
-  \item \textbf{dataset3}: preoperative$\to$intraoperative pairs. The intraoperative
-        target is resampled into the query's physical space, so the pair already
-        shares geometry, but surgery shifts/removes tissue. No labels.
+  \item \textbf{dataset1}: зарегистрированные предоперационные пары. \emph{Единственный}
+        размеченный обучающий набор ($350$ пар). Запрос и target пары разделяют общую сетку.
+  \item \textbf{dataset2}: тот же источник, что и dataset1, но каждый запрос и target
+        \emph{независимо} деформированы случайным жёстким преобразованием (поворот +
+        сдвиг) \emph{и} нелинейной (elastic) деформацией. Без меток.
+  \item \textbf{dataset3}: пары предоперационное$\to$интраоперационное. Интраоперационный
+        target пересэмплирован в физическое пространство запроса, поэтому пара уже
+        разделяет геометрию, но операция смещает/удаляет ткани. Без меток.
 \end{itemize}
 
-\paragraph{Counts.} dataset1: $40/100$ val/test queries (and equal galleries);
-dataset2: $40/100$; dataset3: $20/77$. A full submission has $377$ rows.
+\paragraph{Размеры.} dataset1: $40/100$ val/test-запросов (и равные gallery);
+dataset2: $40/100$; dataset3: $20/77$. Полный submission содержит $377$ строк.
 
 % ======================================================================
-\section{Evaluation metric and the bijection insight}
+\section{Метрика оценки и инсайт о биекции}
 
-The score is the mean reciprocal rank (MRR), computed per dataset and averaged:
+Счёт — это mean reciprocal rank (MRR), вычисляемый по датасету и усредняемый:
 \begin{equation}
 \text{score} = \tfrac{1}{3}\big(\text{MRR}_{1}+\text{MRR}_{2}+\text{MRR}_{3}\big),
 \qquad
 \text{MRR}_d = \frac{1}{|Q_d|}\sum_{q\in Q_d}\frac{1}{\text{rank}_q},
 \end{equation}
-where $\text{rank}_q$ is the position of the true target in the ranking for query
-$q$. A partial submission of one dataset reports $\text{MRR}_d/3$, so multiplying by
-$3$ recovers that dataset's MRR --- the basis of all our diagnostics.
+где $\text{rank}_q$ — позиция истинного target в ранжировании для запроса
+$q$. Частичный submission одного датасета отображает $\text{MRR}_d/3$, поэтому умножение
+на $3$ восстанавливает MRR этого датасета --- основа всех наших диагностик.
 
-\paragraph{Bijection.} In every pool the number of queries equals the number of
-gallery targets, and the matching is one-to-one. Retrieval is therefore exactly a
-\emph{linear assignment problem}: find the permutation $\pi$ matching queries to
-targets. If a similarity matrix $S$ ranks the right target first for all queries,
-$\text{MRR}=1$. This motivates the Hungarian re-ranking in
-Section~\ref{sec:hungarian}.
+\paragraph{Биекция.} В каждом пуле число запросов равно числу target в gallery, и
+сопоставление взаимно-однозначно. Поэтому ретривал — это в точности
+\emph{задача линейного назначения}: найти перестановку $\pi$, сопоставляющую запросы
+с target. Если матрица похожести $S$ ставит правильный target первым для всех запросов,
+$\text{MRR}=1$. Это мотивирует переранжирование Hungarian в
+разделе~\ref{sec:hungarian}.
 
 % ======================================================================
-\section{Preprocessing: intensity normalization}\label{sec:prep}
+\section{Препроцессинг: нормализация интенсивностей}\label{sec:prep}
 
-Each volume $V$ is loaded and reduced to a normalized intensity field on a fixed
-$G\times G\times G$ grid (we use $G=44$).
+Каждый volume $V$ загружается и приводится к нормализованному полю интенсивностей на
+фиксированной сетке $G\times G\times G$ (мы используем $G=44$).
 
 \begin{enumerate}[nosep]
-  \item Load NIfTI; if 4D keep the first channel; replace NaN/Inf with $0$.
-  \item Foreground mask $M=\{|V|>10^{-6}\}$.
-  \item Robust window: $lo,hi$ = the $1$st and $99$th percentiles of $V$ over $M$.
+  \item Загрузить NIfTI; если 4D, оставить первый канал; заменить NaN/Inf на $0$.
+  \item Foreground-маска $M=\{|V|>10^{-6}\}$.
+  \item Робастное окно: $lo,hi$ = $1$-й и $99$-й перцентили $V$ по $M$.
   \item Clip-and-scale: $V \leftarrow \mathrm{clip}\!\big((V-lo)/(hi-lo),\,0,\,1\big)$,
-        and set background ($\lnot M$) to $0$.
-  \item Resample $V$ onto the $G^3$ grid by trilinear interpolation
+        и фон ($\lnot M$) устанавливается в $0$.
+  \item Пересэмплировать $V$ на сетку $G^3$ трилинейной интерполяцией
         (\code{scipy.ndimage.map\_coordinates}, order $1$).
 \end{enumerate}
 
-This makes intensities comparable across scans of differing dynamic range, and the
-fixed grid makes every volume a vector of the same length $G^3$.
+Это делает интенсивности сопоставимыми между сканами с разным динамическим диапазоном,
+а фиксированная сетка делает каждый volume вектором одинаковой длины $G^3$.
 
 % ======================================================================
-\section{Cross-modal embedding: PCA + Ridge}\label{sec:embed}
+\section{Кросс-модальный эмбеддинг: PCA + Ridge}\label{sec:embed}
 
-Query (T1) and target (T2) are different modalities, so raw intensities are not
-directly comparable. We learn the cross-modal relationship on the $350$ labelled
-dataset1 pairs.
+Запрос (T1) и target (T2) — это разные модальности, поэтому сырые интенсивности
+напрямую несопоставимы. Мы выучиваем кросс-модальную связь на $350$ размеченных
+парах dataset1.
 
-Let $\phi(\cdot)\in\R^{G^3}$ be the flattened, mean-centred, $L_2$-normalized grid
-feature of a (geometry-normalized) volume. From the training pairs
-$\{(\phi^q_i,\phi^t_i)\}_{i=1}^{350}$:
+Пусть $\phi(\cdot)\in\R^{G^3}$ — это развёрнутый, центрированный по среднему,
+$L_2$-нормализованный grid-feature (геометрически нормализованного) volume. Из обучающих
+пар $\{(\phi^q_i,\phi^t_i)\}_{i=1}^{350}$:
 
 \begin{enumerate}[nosep]
-  \item Fit a whitening PCA on the queries, $P_q:\R^{G^3}\!\to\R^{c}$, and a separate
-        whitening PCA on the targets, $P_t$, with $c=\min(128,\,n-1)$.
-  \item Fit a ridge regression $W$ mapping query codes to target codes:
+  \item Обучить whitening-PCA на запросах, $P_q:\R^{G^3}\!\to\R^{c}$, и отдельную
+        whitening-PCA на target, $P_t$, с $c=\min(128,\,n-1)$.
+  \item Обучить ridge-регрессию $W$, отображающую коды запроса в коды target:
         \begin{equation}
           W=\arg\min_{W}\ \sum_i \big\|W\,P_q(\phi^q_i)-P_t(\phi^t_i)\big\|^2
           +\alpha\|W\|_F^2,\qquad \alpha=100 .
         \end{equation}
 \end{enumerate}
 
-At inference, a query embeds as $u = \mathrm{norm}\!\big(W\,P_q(\phi^q)\big)$ and a
-target as $v = \mathrm{norm}\!\big(P_t(\phi^t)\big)$; their similarity is the cosine
-$u^\top v$. Intuitively, PCA denoises and decorrelates each modality, and ridge
-learns the linear T1$\to$T2 code transformation, so matched subjects land nearby in
-the shared target code space.
+На инференсе запрос эмбеддится как $u = \mathrm{norm}\!\big(W\,P_q(\phi^q)\big)$, а
+target — как $v = \mathrm{norm}\!\big(P_t(\phi^t)\big)$; их похожесть — это косинус
+$u^\top v$. Интуитивно PCA очищает от шума и декоррелирует каждую модальность, а ridge
+выучивает линейное преобразование кодов T1$\to$T2, так что сопоставленные субъекты
+оказываются рядом в общем пространстве кодов target.
 
 % ======================================================================
-\section{Geometry: template normalization}\label{sec:template}
+\section{Геометрия: template normalization}\label{sec:template}
 
-The embedding of Section~\ref{sec:embed} assumes query and target occupy a
-\emph{common geometric frame}. That holds for dataset1 (registered) but not for
-dataset2, where pose differs per volume. We restore the common frame by
-\emph{template normalization}.
+Эмбеддинг из раздела~\ref{sec:embed} предполагает, что запрос и target занимают
+\emph{общую геометрическую систему координат}. Это верно для dataset1
+(зарегистрирован), но не для dataset2, где поза различается у каждого volume. Мы
+восстанавливаем общую систему координат с помощью \emph{template normalization}.
 
-\paragraph{Templates.} Because dataset1 pairs are registered, the voxel-wise means
+\paragraph{Шаблоны.} Поскольку пары dataset1 зарегистрированы, повоксельные средние
 \begin{equation}
 T_1=\frac{1}{350}\sum_i V^q_i,\qquad
 T_2=\frac{1}{350}\sum_i V^t_i
 \end{equation}
-are two sharp templates that, crucially, \emph{share one grid}: $T_1$ (a mean T1
-brain) and $T_2$ (a mean T2 brain) are mutually registered.
+— это два резких шаблона, которые, что критически важно, \emph{разделяют одну сетку}:
+$T_1$ (средний T1-мозг) и $T_2$ (средний T2-мозг) взаимно зарегистрированы.
 
-\paragraph{Registration.} Each query is rigidly aligned to $T_1$ and each target to
-$T_2$ --- an \emph{intramodal} registration (same modality on both sides), which is
-far more robust than cross-modal alignment. We optimize a 6-parameter rigid
-transform $\theta=(\text{rot}_x,\text{rot}_y,\text{rot}_z,t_x,t_y,t_z)$ to maximize
-the normalized cross-correlation (NCC) over the foreground:
+\paragraph{Регистрация.} Каждый запрос жёстко выравнивается к $T_1$, а каждый target — к
+$T_2$ --- это \emph{intramodal}-регистрация (одна модальность с обеих сторон), которая
+намного устойчивее кросс-модального выравнивания. Мы оптимизируем 6-параметрическое
+жёсткое преобразование $\theta=(\text{rot}_x,\text{rot}_y,\text{rot}_z,t_x,t_y,t_z)$,
+чтобы максимизировать нормализованную кросс-корреляцию (NCC) по foreground:
 \begin{equation}
 \theta^\star=\arg\max_{\theta}\ \mathrm{NCC}\big(T_m,\ R_\theta[V]\big),
 \end{equation}
-where $R_\theta$ applies the rigid transform about the volume centre. Optimization
-uses Powell's method from $4$ starts (identity $+$ three seeded rotations) on a
-coarse $20^3$ copy for speed; the recovered $\theta^\star$ is then applied at full
-grid resolution. The aligned volume feeds $\phi(\cdot)$ as before.
+где $R_\theta$ применяет жёсткое преобразование вокруг центра volume. Оптимизация
+использует метод Пауэлла из $4$ стартов (тождество $+$ три засеянных поворота) на
+грубой копии $20^3$ для скорости; восстановленное $\theta^\star$ затем применяется на
+полном разрешении сетки. Выровненный volume подаётся в $\phi(\cdot)$ как и раньше.
 
-\paragraph{Why it works.} After normalization, query and target of the \emph{same}
-subject occupy the same template frame, so the dataset1-trained map of
-Section~\ref{sec:embed} transfers to dataset2. The cost is $O(N)$ (one registration
-per volume), not $O(N^2)$ (every query-target pair). This single step raised
-dataset2 MRR from $\sim0.39$ to $\sim0.75$ and dataset1 from $\sim0.877$ to
-$\sim0.964$.
+\paragraph{Почему это работает.} После нормализации запрос и target \emph{одного и того
+же} субъекта занимают одну систему координат шаблона, поэтому обученный на dataset1
+маппинг из раздела~\ref{sec:embed} переносится на dataset2. Стоимость — $O(N)$ (одна
+регистрация на volume), а не $O(N^2)$ (каждая пара запрос-target). Один этот шаг поднял
+MRR dataset2 с $\sim0.39$ до $\sim0.75$ и dataset1 с $\sim0.877$ до $\sim0.964$.
 
-\paragraph{When NOT to register (dataset3).} dataset3 targets are already resampled
-into the query's space, so query and target \emph{already share geometry}.
-Registering an intraoperative volume to a \emph{preoperative} template only injects
-misalignment around surgical changes. Empirically, template normalization
-\emph{hurts} dataset3 (MRR $0.690\to0.251$). Instead we skip registration and feed
-the raw grid feature $\phi(V)$ directly. The grid feature itself is far stronger
-than the legacy hand-crafted features, lifting dataset3 to $\text{MRR}\approx1.0$.
+\paragraph{Когда НЕ регистрировать (dataset3).} Target dataset3 уже пересэмплированы в
+пространство запроса, поэтому запрос и target \emph{уже разделяют геометрию}. Регистрация
+интраоперационного volume к \emph{предоперационному} шаблону лишь вносит рассогласование
+вокруг хирургических изменений. Эмпирически template normalization \emph{вредит}
+dataset3 (MRR $0.690\to0.251$). Вместо этого мы пропускаем регистрацию и подаём сырой
+grid-feature $\phi(V)$ напрямую. Сам grid-feature намного сильнее старых hand-crafted
+признаков, поднимая dataset3 до $\text{MRR}\approx1.0$.
 
 % ======================================================================
-\section{One-to-one Hungarian assignment}\label{sec:hungarian}
+\section{Назначение «один к одному» (Hungarian)}\label{sec:hungarian}
 
-Given the cosine similarity matrix $S\in\R^{N\times N}$ for a pool, we exploit the
-bijection (Section~2). We solve the optimal assignment
+Имея матрицу косинусной похожести $S\in\R^{N\times N}$ для пула, мы эксплуатируем
+биекцию (раздел~2). Мы решаем задачу оптимального назначения
 \begin{equation}
 \pi^\star=\arg\max_{\pi\in \mathfrak{S}_N}\ \sum_{i} S_{i,\pi(i)}
 \end{equation}
-with the Hungarian algorithm (\code{scipy.optimize.linear\_sum\_assignment} on
-$-S$). For each query we then place its assigned target first (by boosting
-$S_{i,\pi^\star(i)}$ above all other entries) and rank the remainder by raw
-similarity. This converts a globally consistent matching into per-query rankings and
-gave a large, repeatable gain (e.g.\ $0.557\to0.594$ early on).
+венгерским алгоритмом (\code{scipy.optimize.linear\_sum\_assignment} на
+$-S$). Для каждого запроса мы затем ставим его назначенный target первым (повышая
+$S_{i,\pi^\star(i)}$ выше всех остальных элементов) и ранжируем остаток по сырой
+похожести. Это превращает глобально согласованное сопоставление в ранжирования по
+запросам и дало большой, воспроизводимый прирост (например, $0.557\to0.594$ на ранней
+стадии).
 
 % ======================================================================
-\section{The synthetic-dataset2 validation harness}\label{sec:harness}
+\section{Валидационный харнесс синтетического dataset2}\label{sec:harness}
 
-Kaggle allows only $100$ submissions/day and dataset2/3 have no labels, so blind
-iteration is expensive. We build a \emph{local} proxy for dataset2 from the labelled
+Kaggle допускает лишь $100$ submission в день, а у dataset2/3 нет меток, поэтому
+слепая итерация дорога. Мы строим \emph{локальный} прокси для dataset2 из размеченного
 dataset1.
 
-\paragraph{Construction.} Split the $350$ dataset1 pairs into a clean \emph{train}
-set (used to fit templates and the PCA/Ridge map) and an \emph{eval} set. Each eval
-query and target is warped \emph{independently} by:
+\paragraph{Конструкция.} Разбиваем $350$ пар dataset1 на чистый \emph{train}-набор
+(используемый для обучения шаблонов и PCA/Ridge-маппинга) и \emph{eval}-набор. Каждый
+eval-запрос и target деформируются \emph{независимо}:
 \begin{itemize}[nosep]
-  \item a random rigid transform (rotation up to $\pm r$ degrees, translation up to
-        $\pm s$ voxels), and
-  \item an elastic deformation: a Gaussian-smoothed ($\sigma$) random displacement
-        field scaled by $\alpha$, applied via \code{map\_coordinates}.
+  \item случайным жёстким преобразованием (поворот до $\pm r$ градусов, сдвиг до
+        $\pm s$ вокселей), и
+  \item elastic-деформацией: сглаженным гауссианом ($\sigma$) случайным полем смещений,
+        масштабированным на $\alpha$, применённым через \code{map\_coordinates}.
 \end{itemize}
-A candidate method produces a similarity matrix on the eval set, and we report
-Hungarian-recovery MRR (the eval diagonal is ground truth).
+Кандидатный метод выдаёт матрицу похожести на eval-наборе, и мы сообщаем
+Hungarian-recovery MRR (диагональ eval — это ground truth).
 
-\paragraph{Calibration.} We tuned $(r,s,\sigma,\alpha)=(12,6,8,3)$ so that the
-existing canonical baseline scores $\approx0.26$ on the harness, matching its real
-dataset2 MRR. At that operating point template normalization scored $\approx0.55$
---- correctly predicting the real win \emph{before} any submission.
+\paragraph{Калибровка.} Мы подобрали $(r,s,\sigma,\alpha)=(12,6,8,3)$ так, чтобы
+существующий canonical-baseline давал $\approx0.26$ на харнессе, совпадая с его реальным
+MRR dataset2. В этой рабочей точке template normalization дала $\approx0.55$
+--- корректно предсказав реальный выигрыш \emph{до} какого-либо submission.
 
-\paragraph{Scope and a caveat.} The harness is reliable for \emph{relative ranking}
-of methods under dataset2-style distortion. It is \emph{not} reliable for absolute
-choices on real dataset1/3, nor for resolution choices: it favored grid $56$
-($0.72$ vs $0.56$), but on real data grid $56$ \emph{regressed} both d1 and d2
-(likely PCA overfitting with only $350$ training pairs). Grid $44$ is optimal.
+\paragraph{Область применения и оговорка.} Харнесс надёжен для \emph{относительного
+ранжирования} методов при искажении в стиле dataset2. Он \emph{ненадёжен} для
+абсолютных выборов на реальном dataset1/3, как и для выбора разрешения: он предпочёл
+grid $56$ ($0.72$ против $0.56$), но на реальных данных grid $56$ \emph{дал регресс}
+и на d1, и на d2 (вероятно, переобучение PCA всего на $350$ обучающих парах). Grid $44$
+оптимален.
 
 % ======================================================================
-\section{Full pipeline, per dataset}
+\section{Полный пайплайн по датасетам}
 
 \begin{center}
 \begin{tabular}{@{}llll@{}}
 \toprule
-Dataset & Geometry handling & Feature & Map + rank \\
+Датасет & Обработка геометрии & Feature & Маппинг + ранжирование \\
 \midrule
-dataset1 & template normalization ($T_1/T_2$) & $\phi$ on $44^3$ & PCA+Ridge, cosine, Hungarian\\
-dataset2 & template normalization ($T_1/T_2$) & $\phi$ on $44^3$ & PCA+Ridge, cosine, Hungarian\\
-dataset3 & \emph{none} (already aligned)       & $\phi$ on $44^3$ & PCA+Ridge, cosine, Hungarian\\
+dataset1 & template normalization ($T_1/T_2$) & $\phi$ на $44^3$ & PCA+Ridge, косинус, Hungarian\\
+dataset2 & template normalization ($T_1/T_2$) & $\phi$ на $44^3$ & PCA+Ridge, косинус, Hungarian\\
+dataset3 & \emph{нет} (уже выровнено)       & $\phi$ на $44^3$ & PCA+Ridge, косинус, Hungarian\\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\noindent End-to-end for a pool:
+\noindent Сквозной процесс для пула:
 \begin{enumerate}[nosep]
-  \item Build $T_1,T_2$ and fit $P_q,P_t,W$ on dataset1 (once).
-  \item For each query/target: normalize intensities $\to$ resample to $44^3$ $\to$
-        (register to its template, \emph{except} dataset3) $\to$ $\phi$.
-  \item Embed: $u=\mathrm{norm}(W P_q(\phi^q))$, $v=\mathrm{norm}(P_t(\phi^t))$.
-  \item $S=UV^\top$; Hungarian boost; write space-separated ranking per query.
+  \item Построить $T_1,T_2$ и обучить $P_q,P_t,W$ на dataset1 (однократно).
+  \item Для каждого запроса/target: нормализовать интенсивности $\to$ пересэмплировать
+        на $44^3$ $\to$ (зарегистрировать к его шаблону, \emph{кроме} dataset3) $\to$ $\phi$.
+  \item Эмбеддинг: $u=\mathrm{norm}(W P_q(\phi^q))$, $v=\mathrm{norm}(P_t(\phi^t))$.
+  \item $S=UV^\top$; буст Hungarian; записать разделённое пробелами ранжирование по запросу.
 \end{enumerate}
 
 % ======================================================================
-\section{Results}
+\section{Результаты}
 
 \begin{center}
 \begin{tabular}{@{}lcc@{}}
 \toprule
-Submission & Public score & Note \\
+Submission & Публичный счёт & Примечание \\
 \midrule
-canon20 flipaug (prior best)                  & 0.65137 & session start \\
-d1 pca + d2 \textbf{template} + d3 pca          & 0.77071 & d2 fix \\
-d1 \textbf{template} + d2 template + d3 pca     & 0.80127 & d1 also helped by template \\
-d1 template + d2 template + d3 \textbf{grid}    & \textbf{0.90444} & \textbf{best; goal hit} \\
-grid56 variants                                & 0.850 / 0.866 & regressed (see \S\ref{sec:harness}) \\
+canon20 flipaug (прежний лучший)              & 0.65137 & начало сессии \\
+d1 pca + d2 \textbf{template} + d3 pca          & 0.77071 & фикс d2 \\
+d1 \textbf{template} + d2 template + d3 pca     & 0.80127 & template помог и d1 \\
+d1 template + d2 template + d3 \textbf{grid}    & \textbf{0.90444} & \textbf{лучший; цель достигнута} \\
+варианты grid56                                & 0.850 / 0.866 & регресс (см.\ \S\ref{sec:harness}) \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\noindent Approximate per-dataset MRR of the best mix:
+\noindent Примерный MRR по датасетам у лучшего микса:
 $\text{MRR}_1\!\approx\!0.964$, $\text{MRR}_2\!\approx\!0.749$,
-$\text{MRR}_3\!\approx\!1.0$, giving $(0.964+0.749+1.0)/3\approx0.904$.
+$\text{MRR}_3\!\approx\!1.0$, что даёт $(0.964+0.749+1.0)/3\approx0.904$.
 
 % ======================================================================
-\section{Negative results}
+\section{Отрицательные результаты}
 
-The harness and partial submissions ruled out several directions:
+Харнесс и частичные submission исключили несколько направлений:
 \begin{itemize}[nosep]
-  \item \textbf{Pose-invariant descriptors} (intensity/gradient histograms, radial
-        profiles, shape eigenvalues): too lossy; discard the spatial structure that
-        distinguishes subjects ($\approx0.11$ on the harness).
-  \item \textbf{Pairwise rigid edge-NCC re-rank}: elastic warp defeats rigid
-        alignment and the optimizer hits local minima ($0.20<0.26$).
-  \item \textbf{grid $56$}: better on the harness, worse on real data.
-  \item \textbf{Deep contrastive 3D model on $850$ geom+contrast augmented pairs}
-        (ROCm GPU): holdout MRR $\approx0.04$, far below classical $0.90$. The
-        scratch model does not learn competitive embeddings even with augmentation.
-  \item \textbf{BrainIAC foundation embeddings} (cosine / adapter / patch): all
-        below the classical pipeline (historical).
+  \item \textbf{Поза-инвариантные дескрипторы} (гистограммы интенсивностей/градиентов,
+        радиальные профили, собственные значения формы): слишком лоссовые; отбрасывают
+        пространственную структуру, различающую субъектов ($\approx0.11$ на харнессе).
+  \item \textbf{Попарный rigid edge-NCC re-rank}: elastic-варп побеждает жёсткое
+        выравнивание, и оптимизатор застревает в локальных минимумах ($0.20<0.26$).
+  \item \textbf{grid $56$}: лучше на харнессе, хуже на реальных данных.
+  \item \textbf{Глубокая contrastive 3D-модель на $850$ geom+contrast аугментированных парах}
+        (ROCm GPU): holdout MRR $\approx0.04$, намного ниже классических $0.90$. Модель
+        с нуля не учит конкурентоспособные эмбеддинги даже с аугментацией.
+  \item \textbf{Эмбеддинги фундаментальной модели BrainIAC} (косинус / адаптер / patch): все
+        ниже классического пайплайна (исторически).
 \end{itemize}
 
 % ======================================================================
-\section{Reproduction}
+\section{Воспроизведение}
 
 \begin{lstlisting}[language=bash]
 # Best dataset2 (template normalization) + dataset1
@@ -308,14 +313,13 @@ python synthetic_d2_eval.py --n-eval 60 --n-train 250 --grid 44 \
 python classical_retrieval.py validate submissions/<file>.csv
 \end{lstlisting}
 
-\paragraph{Key source files.}
-\code{d2\_template\_retrieval.py} (production pipeline; caches normalized features
-in \code{.d2cache/}); \code{synthetic\_d2\_eval.py} and \code{d2\_methods.py} (the
-validation harness and candidate scorers); \code{assignment\_rerank.py} (Hungarian
-re-ranking of classical scores); \code{classical\_retrieval.py} (feature cache and
-submission validation).
+\paragraph{Ключевые исходные файлы.}
+\code{d2\_template\_retrieval.py} (продакшен-пайплайн; кэширует нормализованные признаки
+в \code{.d2cache/}); \code{synthetic\_d2\_eval.py} и \code{d2\_methods.py} (валидационный
+харнесс и кандидатные скореры); \code{assignment\_rerank.py} (переранжирование Hungarian
+классических оценок); \code{classical\_retrieval.py} (кэш признаков и валидация submission).
 
-\paragraph{Compile.}
+\paragraph{Компиляция.}
 \begin{lstlisting}[language=bash]
 pdflatex architecture.tex
 \end{lstlisting}
